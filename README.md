@@ -1,6 +1,6 @@
 # WDPCM - Web-based Distributed Process Control Manager
 
-![WDPCM Interface](https://github-production-user-asset-6210df.s3.amazonaws.com/77280141/452792470-3aef9f4e-9cbc-40e8-9fe6-2bf4d8d4a0e6.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVCODYLSA53PQK4ZA%2F20250608%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250608T141344Z&X-Amz-Expires=300&X-Amz-Signature=0832b94eae2f8d0520f7a801703086a2367c596cb8d6f2a38d7bfb2f8a271abc&X-Amz-SignedHeaders=host)
+![WDPCM Interface](https://private-user-images.githubusercontent.com/77280141/452793126-8a171dfd-9711-4f31-997e-cc4c8cd1c26e.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDkzOTI4NDQsIm5iZiI6MTc0OTM5MjU0NCwicGF0aCI6Ii83NzI4MDE0MS80NTI3OTMxMjYtOGExNzFkZmQtOTcxMS00ZjMxLTk5N2UtY2M0YzhjZDFjMjZlLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTA2MDglMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUwNjA4VDE0MjIyNFomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTZiODAyZmI0NTA5ZWJkMDJlMzdhY2IzNjMzOGYxMjMyNDFkYjExYzM5MzNmNmJjZGQ5OTZlNjYwZWEwZmZjNWImWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.9dDrRE4vupe55n2MDekIFR6gh1eDSXYldK9sePRAo2Q)
 
 A modern, real-time web-based process control manager built with Bun and Svelte. WDPCM allows you to manage, monitor, and control system processes through an intuitive web interface with real-time logging and status updates.
 
