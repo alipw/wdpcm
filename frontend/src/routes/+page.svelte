@@ -23,7 +23,7 @@
 	let actionLoading: { [key: string]: boolean } = $state({});
 
 	// Debounce search state
-	let searchTimeout: number = $state(0);
+	let searchTimeout: NodeJS.Timeout | null = $state(null);
 
 	// Log viewer state
 	let showLogModal = $state(false);
@@ -88,10 +88,6 @@
 						logStore[alias] = [];
 					}
 					logStore[alias] = [...logStore[alias], newMessage];
-
-					if (logStore[alias].length > 1000) {
-						logStore[alias] = logStore[alias].slice(-1000);
-					}
 
 					if (alias === currentLogProcess) {
 						if (isInitialLoad) {
@@ -249,11 +245,6 @@
 		logEntry.appendChild(data);
 
 		logContainers[alias].appendChild(logEntry);
-
-		const entries = logContainers[alias].children;
-		if (entries.length > 1000) {
-			logContainers[alias].removeChild(entries[0]);
-		}
 	}
 
 	function checkScrollPosition() {
