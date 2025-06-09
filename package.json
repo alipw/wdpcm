@@ -1,0 +1,11 @@
+{
+    "name": "wdpcm-runner",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "dev": "concurrently \"bun --cwd backend start\" \"bun --cwd frontend dev\""
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}
