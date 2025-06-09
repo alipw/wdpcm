@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"bun --cwd backend start\" \"bun --cwd frontend dev\"",
-    "prod": "concurrently \"bun --cwd backend start\" \"bun --cwd frontend start\"",
+    "prod": "concurrently \"bun --cwd backend start\" \"bun --cwd frontend preview\"",
     "initiate": "cd frontend && bun install && bun run build && cd ../backend && bun install"
   },
   "devDependencies": {
