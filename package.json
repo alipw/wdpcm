@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"bun --cwd backend start\" \"bun --cwd frontend dev\"",
+    "dev": "concurrently \"bun --cwd backend --hot start\" \"bun --cwd frontend dev\"",
     "prod": "concurrently \"bun --cwd backend start\" \"bun --cwd frontend preview\"",
     "initiate": "cd frontend && bun install && bun run build && cd ../backend && bun install"
   },
