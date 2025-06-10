@@ -24,7 +24,8 @@
 	let error = $state("");
 	let actionLoading: { [key: string]: boolean } = $state({});
 	let debouncedActionLoading: { [key: string]: boolean } = $state({});
-	let loadingTimeouts: { [key: string]: ReturnType<typeof setTimeout> } = $state({});
+	let loadingTimeouts: { [key: string]: ReturnType<typeof setTimeout> } =
+		$state({});
 
 	// Debounce search state
 	let searchTimeout: ReturnType<typeof setTimeout> | null = $state(null);
@@ -49,7 +50,7 @@
 	} = $state({});
 	const terminalOptions: ITerminalOptions = {
 		theme: {
-			background: "#1f2937", // gray-800
+			background: "#192738", // gray-800
 			foreground: "#d1d5db", // gray-300
 			cursor: "#f97316", // orange-500
 		},
@@ -222,7 +223,8 @@
 					);
 				}
 				// set that process status to stopped
-				processes.find((p) => p.alias === message.alias)!.status = "stopped";
+				processes.find((p) => p.alias === message.alias)!.status =
+					"stopped";
 			},
 		);
 
@@ -442,10 +444,6 @@
 		fetchProcesses();
 	}
 
-	function closeSidebar() {
-		showSidebar = false;
-	}
-
 	function toggleSidebar() {
 		showSidebar = !showSidebar;
 	}
@@ -494,110 +492,29 @@
 			closeSearch();
 		}
 	}
+
 </script>
 
-{#if showSidebar}
-	<div
-		class="w-80 bg-gray-800 border-r border-gray-700 flex-shrink-0 fixed h-full z-30"
-		transition:fly={{ x: "-100%", duration: 400, easing: quintOut }}
-	>
-		<!-- Sidebar Header -->
+<div class="overflow-hidden">
+	{#if showSidebar}
 		<div
-			class="flex items-center justify-between p-4 border-b border-gray-700"
+			class="fixed h-full p-3 overflow-hidden z-40"
 		>
-			<h2 class="text-lg font-semibold text-gray-100">Settings</h2>
-			<button
-				onclick={toggleSidebar}
-				class="text-gray-400 hover:text-gray-200 text-2xl font-bold"
-				aria-label="Close sidebar"
+			<div
+				class="w-80 bg-gray-800 backdrop-blur-xl border border-gray-700 flex-shrink-0 h-full z-40 rounded-lg"
+				transition:fly={{ x: "-100%", duration: 400, easing: quintOut }}
 			>
-				<svg
-					class="w-6 h-6 text-gray-800 dark:text-white"
-					aria-hidden="true"
-					xmlns="http://www.w3.org/2000/svg"
-					width="24"
-					height="24"
-					fill="currentColor"
-					viewBox="0 0 24 24"
-				>
-					<path
-						fill-rule="evenodd"
-						d="M10 4H4c-1.10457 0-2 .89543-2 2v12c0 1.1046.89543 2 2 2h6V4ZM7.79283 9.29289c.39053.39053.39053 1.02371 0 1.41421L6.5 11.9999l1.29283 1.2929c.39053.3905.39053 1.0237 0 1.4142-.39052.3905-1.02368.3905-1.41421 0l-1.99994-2c-.39052-.3905-.39052-1.0236 0-1.4142l1.99994-1.99991c.39053-.39052 1.02369-.39052 1.41421 0Z"
-						clip-rule="evenodd"
-					/>
-					<path
-						d="M12 20h8c1.1046 0 2-.8954 2-2V6c0-1.10457-.8954-2-2-2h-8v16Z"
-					/>
-				</svg>
-			</button>
-		</div>
-
-		<!-- Sidebar Content -->
-		<div class="p-4">
-			<nav class="space-y-2">
-				<!-- Open Log on Start Process Toggle -->
+				<!-- Sidebar Header -->
 				<div
-					class="flex items-center justify-between p-3 bg-gray-700 rounded-lg"
+					class="flex items-center justify-between p-3 border-b border-gray-700"
 				>
-					<div class="flex flex-col">
-						<span class="text-sm font-medium text-gray-100"
-							>Open Logs on Start</span
-						>
-						<span class="text-xs text-gray-400"
-							>Automatically show logs when starting a process</span
-						>
-					</div>
-					<div class="flex items-center gap-2">
-						<span class="text-xs text-gray-400">
-							{openLogOnStart ? "ON" : "OFF"}
-						</span>
-						<button
-							onclick={() => {
-								openLogOnStart = !openLogOnStart;
-							}}
-							class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-400 ease-lienar focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 {openLogOnStart
-								? 'bg-green-600'
-								: 'bg-gray-600'}"
-						>
-							<span class="sr-only">Toggle open log on start</span
-							>
-							<span
-								class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-400 ease-in-out {openLogOnStart
-									? 'translate-x-6'
-									: 'translate-x-1'}"
-							>
-							</span>
-						</button>
-					</div>
-				</div>
-			</nav>
-		</div>
-	</div>
-{/if}
-
-<div class="flex h-screen overflow-hidden bg-gray-900 filter transition-all">
-	<!-- Main Content -->
-	<div
-		class="flex-shrink-0 transition-all duration-400 ease-in-out {showLogModal
-			? 'w-1/2'
-			: 'w-full'}"
-	>
-		<button
-			class="{showSidebar
-				? 'opacity-30'
-				: 'opacity-0 pointer-events-none'} fixed z-20 bg-black w-screen h-screen transition-all animate-all"
-			onclick={closeSidebar}
-			aria-label="Close sidebar"
-			aria-hidden="true"
-		></button>
-		<div class="container mx-auto p-4 max-w-6xl">
-			<!-- Header with hamburger menu -->
-			<div class="flex items-center justify-between mb-6">
-				<div class="flex items-center gap-4">
+					<h2 class="text-lg font-semibold text-gray-100">
+						Settings
+					</h2>
 					<button
 						onclick={toggleSidebar}
-						class="p-2 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded-lg transition-colors"
-						aria-label="Open settings"
+						class="text-gray-400 hover:text-gray-200 text-2xl font-bold hover:bg-gray-700 rounded-lg p-2 cursor-pointer"
+						aria-label="Close sidebar"
 					>
 						<svg
 							class="w-6 h-6 text-gray-800 dark:text-white"
@@ -610,7 +527,7 @@
 						>
 							<path
 								fill-rule="evenodd"
-								d="M10 4H4c-1.10457 0-2 .89543-2 2v12c0 1.1046.89543 2 2 2h6V4ZM4.37868 9.29289c-.39052.39053-.39052 1.02371 0 1.41421l1.29283 1.2928-1.29283 1.2929c-.39052.3905-.39052 1.0237 0 1.4142.39052.3905 1.02369.3905 1.41421 0l1.99994-2c.39053-.3905.39053-1.0236 0-1.4142L5.79289 9.29289c-.39052-.39052-1.02369-.39052-1.41421 0Z"
+								d="M10 4H4c-1.10457 0-2 .89543-2 2v12c0 1.1046.89543 2 2 2h6V4ZM7.79283 9.29289c.39053.39053.39053 1.02371 0 1.41421L6.5 11.9999l1.29283 1.2929c.39053.3905.39053 1.0237 0 1.4142-.39052.3905-1.02368.3905-1.41421 0l-1.99994-2c-.39052-.3905-.39052-1.0236 0-1.4142l1.99994-1.99991c.39053-.39052 1.02369-.39052 1.41421 0Z"
 								clip-rule="evenodd"
 							/>
 							<path
@@ -618,315 +535,400 @@
 							/>
 						</svg>
 					</button>
-					<h1 class="text-2xl font-bold text-gray-100">
-						Process Manager
-					</h1>
 				</div>
-			</div>
 
-			<!-- Search Section -->
-			<div class="mb-4 flex gap-3">
-				<div class="flex-1">
-					<input
-						type="text"
-						bind:value={searchQuery}
-						oninput={debouncedSearch}
-						placeholder="Search processes... (e.g., suzuki)"
-						class="w-full px-3 py-2 border border-gray-600 rounded-lg bg-gray-800 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-					/>
-				</div>
-				<button
-					onclick={clearSearch}
-					disabled={loading}
-					class="px-4 py-2 bg-gray-600 text-gray-100 rounded-lg hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					Clear
-				</button>
-			</div>
-
-			<!-- Error Message -->
-			{#if error}
-				<div
-					class="mb-4 p-3 bg-red-900 border border-red-700 text-red-200 rounded-lg"
-				>
-					<p class="font-semibold">Error:</p>
-					<p>{error}</p>
-				</div>
-			{/if}
-
-			<!-- Loading State -->
-			{#if loading}
-				<div class="flex justify-center items-center py-8">
-					<div
-						class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"
-					></div>
-				</div>
-			{/if}
-
-			<!-- Results -->
-			{#if !loading && processes.length > 0}
-				<div class="mb-3 text-sm text-gray-400">
-					Found {processes.length} process{processes.length === 1
-						? ""
-						: "es"}
-				</div>
-				<div class="space-y-2">
-					{#each processes as process}
+				<!-- Sidebar Content -->
+				<div class="p-4">
+					<nav class="space-y-2">
+						<!-- Open Log on Start Process Toggle -->
 						<div
-							onclick={() => toggleLogViewer(process.alias)}
-							class="bg-gray-800 border border-gray-700 rounded-lg p-3 hover:bg-gray-750 transition-colors cursor-pointer hover:border-gray-100 {debouncedActionLoading[
-								process.alias
-							]
-								? 'process-loading'
-								: ''}"
-							aria-label="Toggle log viewer"
-							aria-hidden="true"
-							title="Toggle log viewer"
+							class="flex items-center justify-between rounded-lg"
 						>
-							<div class="flex items-center justify-between">
-								<div class="flex-1 min-w-0">
-									<div class="flex items-center gap-3 mb-1">
-										<h3
-											class="text-base font-semibold text-gray-100 truncate"
-										>
-											{process.alias}
-										</h3>
-										<span
-											class="px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 {process.status ===
-											'running'
-												? 'bg-green-900 text-green-200 border border-green-700'
-												: 'bg-red-900 text-red-200 border border-red-700'}"
-										>
-											{process.status === "running"
-												? "Running"
-												: "Stopped"}
-										</span>
-									</div>
-									<div
-										class="bg-gray-900 px-2 py-1 rounded text-xs text-gray-300 font-mono truncate"
-									>
-										{process.command}
-									</div>
-								</div>
-								<div
-									class="flex items-center gap-2 ml-3 flex-shrink-0"
+							<div class="flex flex-col">
+								<span class="text-sm font-medium text-gray-100"
+									>Open Logs on Start</span
 								>
-									<div
-										class="flex items-center gap-2"
-										onclick={(e) => e.stopPropagation()}
-										aria-label="Toggle process"
-										aria-hidden="true"
-										title="Toggle process"
+								<span class="text-xs text-gray-400"
+									>Automatically show logs when starting a
+									process</span
+								>
+							</div>
+							<div class="flex items-center gap-2">
+								<span class="text-xs text-gray-400">
+									{openLogOnStart ? "ON" : "OFF"}
+								</span>
+								<button
+									onclick={() => {
+										openLogOnStart = !openLogOnStart;
+									}}
+									class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-400 ease-lienar focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 {openLogOnStart
+										? 'bg-green-600'
+										: 'bg-gray-600'} cursor-pointer"
+								>
+									<span class="sr-only"
+										>Toggle open log on start</span
 									>
-										<span class="text-xs text-gray-400">
-											{process.status === "running"
-												? "ON"
-												: "OFF"}
-										</span>
-										<button
-											onclick={() => {
-												if (
-													!actionLoading[
-														process.alias
-													]
-												) {
-													if (
-														process.status ===
-														"running"
-													) {
-														stopProcess(
-															process.alias,
-														);
-													} else {
-														startProcess(
-															process.alias,
-														);
-													}
-												}
-											}}
-											disabled={debouncedActionLoading[
-												process.alias
-											]}
-											class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-400 ease-in-out focus:outline-none focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed {process.status ===
-											'running'
-												? 'bg-green-600'
-												: 'bg-gray-600'}"
+									<span
+										class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-400 ease-in-out {openLogOnStart
+											? 'translate-x-6'
+											: 'translate-x-1'}"
+									>
+									</span>
+								</button>
+							</div>
+						</div>
+					</nav>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<div class="flex h-screen bg-gray-800 filter transition-all">
+		<!-- Main Content -->
+		<div
+			class="flex-shrink-0 transition-all duration-400 ease-in-out overflow-y-auto {showLogModal
+				? 'w-1/2'
+				: 'w-full'}"
+		>
+			<button
+				class="{showSidebar
+					? 'opacity-40'
+					: 'opacity-0 pointer-events-none'} fixed z-25 w-screen h-screen transition-all animate-all bg-black" 
+				onclick={toggleSidebar}
+				aria-label="Close sidebar"
+			></button>
+			<div class="container mx-auto p-4 max-w-6xl">
+				<!-- Header with hamburger menu -->
+				<div class="flex items-center justify-between mb-6">
+					<div class="flex items-center gap-4">
+						<button
+							onclick={toggleSidebar}
+							class="p-2 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded-lg transition-colors cursor-pointer"
+							aria-label="Open settings"
+						>
+							<svg
+								class="w-6 h-6 text-gray-800 dark:text-white"
+								aria-hidden="true"
+								xmlns="http://www.w3.org/2000/svg"
+								width="24"
+								height="24"
+								fill="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									fill-rule="evenodd"
+									d="M10 4H4c-1.10457 0-2 .89543-2 2v12c0 1.1046.89543 2 2 2h6V4ZM4.37868 9.29289c-.39052.39053-.39052 1.02371 0 1.41421l1.29283 1.2928-1.29283 1.2929c-.39052.3905-.39052 1.0237 0 1.4142.39052.3905 1.02369.3905 1.41421 0l1.99994-2c.39053-.3905.39053-1.0236 0-1.4142L5.79289 9.29289c-.39052-.39052-1.02369-.39052-1.41421 0Z"
+									clip-rule="evenodd"
+								/>
+								<path
+									d="M12 20h8c1.1046 0 2-.8954 2-2V6c0-1.10457-.8954-2-2-2h-8v16Z"
+								/>
+							</svg>
+						</button>
+						<h1 class="text-2xl font-bold text-gray-100">
+							Process Manager
+						</h1>
+					</div>
+				</div>
+
+				<!-- Search Section -->
+				<div class="mb-4 flex gap-3">
+					<div class="flex-1">
+						<input
+							type="text"
+							bind:value={searchQuery}
+							oninput={debouncedSearch}
+							placeholder="Search processes... (e.g., suzuki)"
+							class="w-full px-3 py-2 border border-gray-600 rounded-lg bg-gray-800 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+						/>
+					</div>
+					<button
+						onclick={clearSearch}
+						disabled={loading}
+						class="px-4 py-2 bg-gray-600 text-gray-100 rounded-lg hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						Clear
+					</button>
+				</div>
+
+				<!-- Error Message -->
+				{#if error}
+					<div
+						class="mb-4 p-3 bg-red-900 border border-red-700 text-red-200 rounded-lg"
+					>
+						<p class="font-semibold">Error:</p>
+						<p>{error}</p>
+					</div>
+				{/if}
+
+				<!-- Loading State -->
+				{#if loading}
+					<div class="flex justify-center items-center py-8">
+						<div
+							class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"
+						></div>
+					</div>
+				{/if}
+
+				<!-- Results -->
+				{#if !loading && processes.length > 0}
+					<div class="mb-3 text-sm text-gray-400">
+						Found {processes.length} process{processes.length === 1
+							? ""
+							: "es"}
+					</div>
+					<div
+						class="space-y-2 h-full mb-4"
+					>
+						{#each processes as process}
+							<div
+								onclick={() => toggleLogViewer(process.alias)}
+								class="bg-gray-800 hover:bg-gray-700 rounded-lg p-2 transition-colors cursor-pointer {debouncedActionLoading[
+									process.alias
+								]
+									? 'process-loading'
+									: ''}"
+								aria-label="Toggle log viewer"
+								aria-hidden="true"
+								title="Toggle log viewer"
+							>
+								<div class="flex items-center justify-between">
+									<div class="flex-1 min-w-0">
+										<div
+											class="flex items-center gap-3 mb-1"
 										>
-											<span class="sr-only"
-												>Toggle process</span
+											<h3
+												class="text-base font-semibold text-gray-100 truncate"
 											>
-											<span
-												class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-400 ease-in-out {process.status ===
-												'running'
-													? 'translate-x-6'
-													: 'translate-x-1'}"
-											>
-												{#if actionLoading[process.alias]}
-													<div
-														class="flex items-center justify-center h-full"
-													>
-														<div
-															class="w-2 h-2 bg-gray-400 rounded-full animate-pulse"
-														></div>
-													</div>
-												{/if}
+												{process.alias}
+											</h3>
+										</div>
+										<div
+											class="py-1 rounded text-xs text-gray-300 font-mono truncate"
+										>
+											{process.command}
+										</div>
+									</div>
+									<div
+										class="flex items-center gap-2 ml-3 flex-shrink-0"
+									>
+										<div
+											class="flex items-center gap-2"
+											onclick={(e) => e.stopPropagation()}
+											aria-label="Toggle process"
+											aria-hidden="true"
+											title="Toggle process"
+										>
+											<span class="text-xs text-gray-400">
+												{process.status === "running"
+													? "ON"
+													: "OFF"}
 											</span>
-										</button>
+											<button
+												onclick={() => {
+													if (
+														!actionLoading[
+															process.alias
+														]
+													) {
+														if (
+															process.status ===
+															"running"
+														) {
+															stopProcess(
+																process.alias,
+															);
+														} else {
+															startProcess(
+																process.alias,
+															);
+														}
+													}
+												}}
+												disabled={debouncedActionLoading[
+													process.alias
+												]}
+												class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-400 ease-in-out focus:outline-none focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed {process.status ===
+												'running'
+													? 'bg-green-600'
+													: 'bg-gray-600'} cursor-pointer"
+											>
+												<span class="sr-only"
+													>Toggle process</span
+												>
+												<span
+													class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-400 ease-in-out {process.status ===
+													'running'
+														? 'translate-x-6'
+														: 'translate-x-1'}"
+												>
+													{#if actionLoading[process.alias]}
+														<div
+															class="flex items-center justify-center h-full"
+														>
+															<div
+																class="w-2 h-2 bg-gray-400 rounded-full animate-pulse"
+															></div>
+														</div>
+													{/if}
+												</span>
+											</button>
+										</div>
 									</div>
 								</div>
 							</div>
-						</div>
-					{/each}
-				</div>
-			{:else if !loading && processes.length === 0 && !error}
-				<div class="text-center py-8">
-					<p class="text-gray-400 text-lg">No processes found</p>
-					{#if searchQuery}
-						<p class="text-gray-500 text-sm mt-2">
-							Try a different search term or clear the search
-						</p>
-					{/if}
-				</div>
-			{/if}
-		</div>
-	</div>
-
-	<!-- Log Viewer Panel -->
-	<div
-		class="w-1/2 h-full bg-gray-800 shadow-xl flex flex-col border-l border-gray-700 fixed right-0 top-0 transition-transform duration-400 ease-in-out {showLogModal
-			? 'translate-x-0'
-			: 'translate-x-full'}"
-	>
-		<!-- Panel Header -->
-		<div
-			class="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-700"
-		>
-			<div class="flex items-center gap-2">
-				{#if processPids[currentLogProcess]}
-					<span
-						class="px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 bg-green-900 text-green-200 border border-green-700"
-						title="Process ID"
-					>
-						PID: {processPids[currentLogProcess]}
-					</span>
+						{/each}
+					</div>
+				{:else if !loading && processes.length === 0 && !error}
+					<div class="text-center py-8">
+						<p class="text-gray-400 text-lg">No processes found</p>
+						{#if searchQuery}
+							<p class="text-gray-500 text-sm mt-2">
+								Try a different search term or clear the search
+							</p>
+						{/if}
+					</div>
 				{/if}
-				<h2 class="text-lg font-semibold text-gray-100">
-					Logs for {currentLogProcess}
-				</h2>
 			</div>
-			<button
-				onclick={closeLogViewer}
-				class="text-gray-400 hover:text-gray-200 text-2xl font-bold"
-			>
-				×
-			</button>
 		</div>
 
-		<!-- Log Content -->
-		<div class="flex-1 p-1 bg-gray-800 relative">
-			{#if showSearchBox && showLogModal}
-				<div
-					transition:fly={{ y: -10, duration: 200 }}
-					class="absolute top-2 right-2 bg-gray-900/90 border border-gray-700 rounded-lg p-2 flex items-center gap-2 shadow-lg z-10 backdrop-blur-sm"
-				>
-					<input
-						type="text"
-						bind:this={searchInput}
-						bind:value={searchTerm}
-						oninput={() => findNext()}
-						onkeydown={handleSearchKeyDown}
-						placeholder="Search..."
-						class="w-48 px-2 py-1 bg-gray-700 text-gray-100 rounded border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
-					<button
-						onclick={findPrevious}
-						class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
-						title="Previous (Shift+Enter)"
-						aria-label="Previous (Shift+Enter)"
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-5 w-5"
-							viewBox="0 0 20 20"
-							fill="currentColor"
-							><path
-								fill-rule="evenodd"
-								d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"
-								clip-rule="evenodd"
-							/></svg
-						>
-					</button>
-					<button
-						onclick={findNext}
-						class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
-						title="Next (Enter)"
-						aria-label="Next (Enter)"
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-5 w-5"
-							viewBox="0 0 20 20"
-							fill="currentColor"
-							><path
-								fill-rule="evenodd"
-								d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-								clip-rule="evenodd"
-							/></svg
-						>
-					</button>
-					<button
-						onclick={closeSearch}
-						class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
-						title="Close (Esc)"
-						aria-label="Close (Esc)"
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-5 w-5"
-							viewBox="0 0 20 20"
-							fill="currentColor"
-							><path
-								fill-rule="evenodd"
-								d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-								clip-rule="evenodd"
-							/></svg
-						>
-					</button>
-				</div>
-			{/if}
-			{#each processes as process}
-				<div
-					class="w-full h-full absolute top-0 left-0 transition-opacity duration-400 ease-in-out {showLogModal &&
-					currentLogProcess === process.alias
-						? 'opacity-100'
-						: 'opacity-0 pointer-events-none'}"
-				>
-					<Xterm
-						class="w-full h-full"
-						options={terminalOptions}
-						onLoad={(term) =>
-							onTerminalLoadForProcess(term, process.alias)}
-					/>
-				</div>
-			{/each}
-		</div>
-
-		<!-- Panel Footer -->
+		<!-- Log Viewer Panel -->
 		<div
-			class="flex-shrink-0 p-4 border-t border-gray-700 bg-gray-800 flex justify-between"
+			class="w-1/2 h-full bg-gray-800 shadow-xl flex flex-col border-l border-gray-700 fixed right-0 top-0 transition-transform duration-400 ease-in-out {showLogModal
+				? 'translate-x-0'
+				: 'translate-x-full'}"
 		>
-			<button
-				onclick={clearLogs}
-				class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500"
+			<!-- Panel Header -->
+			<div
+				class="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-700"
 			>
-				Clear Logs
-			</button>
-			<button
-				onclick={closeLogViewer}
-				class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500"
+				<div class="flex items-center gap-2">
+					{#if processPids[currentLogProcess]}
+						<span
+							class="px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 bg-green-900 text-green-200 border border-green-700"
+							title="Process ID"
+						>
+							PID: {processPids[currentLogProcess]}
+						</span>
+					{/if}
+					<h2 class="text-lg font-semibold text-gray-100">
+						Logs for {currentLogProcess}
+					</h2>
+				</div>
+				<button
+					onclick={closeLogViewer}
+					class="text-gray-400 hover:text-gray-200 text-2xl font-bold"
+				>
+					×
+				</button>
+			</div>
+
+			<!-- Log Content -->
+			<div class="flex-1 p-1 bg-gray-800 relative">
+				{#if showSearchBox && showLogModal}
+					<div
+						transition:fly={{ y: -10, duration: 200 }}
+						class="absolute top-2 right-2 bg-gray-800 border border-gray-700 rounded-lg p-2 flex items-center gap-2 shadow-lg z-10 backdrop-blur-sm"
+					>
+						<input
+							type="text"
+							bind:this={searchInput}
+							bind:value={searchTerm}
+							oninput={() => findNext()}
+							onkeydown={handleSearchKeyDown}
+							placeholder="Search..."
+							class="w-48 px-2 py-1 bg-gray-700 text-gray-100 rounded border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						/>
+						<button
+							onclick={findPrevious}
+							class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
+							title="Previous (Shift+Enter)"
+							aria-label="Previous (Shift+Enter)"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-5 w-5"
+								viewBox="0 0 20 20"
+								fill="currentColor"
+								><path
+									fill-rule="evenodd"
+									d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"
+									clip-rule="evenodd"
+								/></svg
+							>
+						</button>
+						<button
+							onclick={findNext}
+							class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
+							title="Next (Enter)"
+							aria-label="Next (Enter)"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-5 w-5"
+								viewBox="0 0 20 20"
+								fill="currentColor"
+								><path
+									fill-rule="evenodd"
+									d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+									clip-rule="evenodd"
+								/></svg
+							>
+						</button>
+						<button
+							onclick={closeSearch}
+							class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
+							title="Close (Esc)"
+							aria-label="Close (Esc)"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-5 w-5"
+								viewBox="0 0 20 20"
+								fill="currentColor"
+								><path
+									fill-rule="evenodd"
+									d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+									clip-rule="evenodd"
+								/></svg
+							>
+						</button>
+					</div>
+				{/if}
+				{#each processes as process}
+					<div
+						class="w-full h-full absolute top-0 left-0 transition-opacity duration-400 ease-in-out {showLogModal &&
+						currentLogProcess === process.alias
+							? 'opacity-100'
+							: 'opacity-0 pointer-events-none'}"
+					>
+						<Xterm
+							class="w-full h-full rounded-full"
+							options={terminalOptions}
+							onLoad={(term) =>
+								onTerminalLoadForProcess(term, process.alias)}
+						/>
+					</div>
+				{/each}
+			</div>
+
+			<!-- Panel Footer -->
+			<div
+				class="flex-shrink-0 p-4 border-gray-700 bg-gray-800 flex justify-between"
 			>
-				Close
-			</button>
+				<button
+					onclick={clearLogs}
+					class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500"
+				>
+					Clear Logs
+				</button>
+				<button
+					onclick={closeLogViewer}
+					class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500"
+				>
+					Close
+				</button>
+			</div>
 		</div>
 	</div>
 </div>
@@ -962,9 +964,5 @@
 			opacity: 0.6;
 			transform: scale(1);
 		}
-	}
-	:global(.xterm-viewport) {
-		/* Disables the scrollbar in the xterm-viewport since the parent is handling scroll */
-		overflow-y: hidden !important;
 	}
 </style>
