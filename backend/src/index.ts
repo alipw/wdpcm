@@ -123,7 +123,11 @@ server.on('connection', (socket) => {
   socket.on('pty-resize', (data: { alias: string, cols: number, rows: number }) => {
     const pty = managedProcesses.get(data.alias);
     if (pty) {
-      pty.resize(data.cols, data.rows);
+      try {
+        pty.resize(data.cols, data.rows);
+      } catch(error) {
+        console.error(error);
+      }
     }
   });
 });
