@@ -10,6 +10,7 @@
 	} from "@battlefieldduck/xterm-svelte";
 	// import "xterm/css/xterm.css";
 	import type { FitAddon } from "@xterm/addon-fit";
+	import type { SearchAddon } from "@xterm/addon-search";
 
 	interface Process {
 		alias: string;
@@ -29,10 +30,20 @@
 	// Log viewer state
 	let showLogModal = $state(false);
 	let currentLogProcess = $state("");
+	let showSearchBox = $state(false);
+	let searchTerm = $state("");
+	let searchInput: HTMLInputElement;
+
+	// Process PIDs state
+	let processPids: { [key: string]: number | null } = $state({});
 
 	// Xterm state
 	let terminals: {
-		[key: string]: { term: Terminal; fitAddon: FitAddon } | null;
+		[key: string]: {
+			term: Terminal;
+			fitAddon: FitAddon;
+			searchAddon: SearchAddon;
+		} | null;
 	} = $state({});
 	const terminalOptions: ITerminalOptions = {
 		theme: {
@@ -129,6 +140,10 @@
 		socket.on(
 			"process-started",
 			(message: { alias: string; pid: number }) => {
+				// Store the PID for this process
+				processPids[message.alias] = message.pid;
+				processPids = { ...processPids };
+
 				terminals[message.alias]?.term.write(
 					`\r\n[Process started with PID: ${message.pid}]\r\n`,
 				);
@@ -157,6 +172,10 @@
 		socket.on(
 			"process-exited",
 			(message: { alias: string; code: number; signal: any }) => {
+				// Clear the PID for this process
+				processPids[message.alias] = null;
+				processPids = { ...processPids };
+
 				const term = terminals[message.alias]?.term;
 				if (term) {
 					term.write(
@@ -168,6 +187,10 @@
 		);
 
 		socket.on("process-stopped", (message: { alias: string }) => {
+			// Clear the PID for this process
+			processPids[message.alias] = null;
+			processPids = { ...processPids };
+
 			terminals[message.alias]?.term.write(`\r\n[Process stopped]\r\n`);
 			fetchProcesses(false);
 		});
@@ -286,6 +309,11 @@
 			return;
 		}
 
+		// If switching between processes, close search for the old one
+		if (showLogModal && currentLogProcess !== alias && showSearchBox) {
+			closeSearch();
+		}
+
 		openLogViewer(alias);
 	}
 
@@ -305,12 +333,18 @@
 
 	function closeLogViewer() {
 		showLogModal = false;
+		if (showSearchBox) {
+			closeSearch();
+		}
 	}
 
 	async function onTerminalLoadForProcess(term: Terminal, alias: string) {
 		const { FitAddon } = await XtermAddon.FitAddon();
+		const { SearchAddon } = await XtermAddon.SearchAddon();
 		const fitAddon = new FitAddon();
+		const searchAddon = new SearchAddon();
 		term.loadAddon(fitAddon);
+		term.loadAddon(searchAddon);
 
 		term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
 			if (event.ctrlKey && event.key.toLowerCase() === "c") {
@@ -320,11 +354,21 @@
 					return false; // Prevent default behavior (sending SIGINT)
 				}
 			}
+			if (event.ctrlKey && event.key.toLowerCase() === "f") {
+				event.preventDefault();
+				openSearch();
+				return false;
+			}
+			if (event.key === "Escape" && showSearchBox) {
+				event.preventDefault();
+				closeSearch();
+				return false;
+			}
 			return true; // Allow other keys to be handled normally
 		});
 
 		// Store terminal info
-		terminals[alias] = { term, fitAddon };
+		terminals[alias] = { term, fitAddon, searchAddon };
 
 		// Initial fit with a delay to ensure container is properly sized
 		setTimeout(() => {
@@ -364,6 +408,51 @@
 
 	function toggleSidebar() {
 		showSidebar = !showSidebar;
+	}
+
+	function openSearch() {
+		showSearchBox = true;
+		setTimeout(() => {
+			searchInput?.focus();
+		}, 50);
+	}
+
+	function closeSearch() {
+		const termInfo = terminals[currentLogProcess];
+		if (termInfo) {
+			termInfo.searchAddon.findNext("", { caseSensitive: false });
+			termInfo.term.focus();
+		}
+		showSearchBox = false;
+		searchTerm = "";
+	}
+
+	function findNext() {
+		const termInfo = terminals[currentLogProcess];
+		if (termInfo && searchTerm) {
+			termInfo.searchAddon.findNext(searchTerm);
+		}
+	}
+
+	function findPrevious() {
+		const termInfo = terminals[currentLogProcess];
+		if (termInfo && searchTerm) {
+			termInfo.searchAddon.findPrevious(searchTerm);
+		}
+	}
+
+	function handleSearchKeyDown(event: KeyboardEvent) {
+		if (event.key === "Enter") {
+			event.preventDefault();
+			if (event.shiftKey) {
+				findPrevious();
+			} else {
+				findNext();
+			}
+		} else if (event.key === "Escape") {
+			event.preventDefault();
+			closeSearch();
+		}
 	}
 </script>
 
@@ -449,7 +538,7 @@
 <div class="flex h-screen overflow-hidden bg-gray-900 filter transition-all">
 	<!-- Main Content -->
 	<div
-		class="flex-shrink-0 transition-all duration-400 ease-in-out overflow-y-auto {showLogModal
+		class="flex-shrink-0 transition-all duration-400 ease-in-out {showLogModal
 			? 'w-1/2'
 			: 'w-full'}"
 	>
@@ -675,9 +764,19 @@
 		<div
 			class="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-700"
 		>
-			<h2 class="text-lg font-semibold text-gray-100">
-				Logs for {currentLogProcess}
-			</h2>
+			<div class="flex items-center gap-2">
+				{#if processPids[currentLogProcess]}
+					<span
+						class="px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 bg-green-900 text-green-200 border border-green-700"
+						title="Process ID"
+					>
+						PID: {processPids[currentLogProcess]}
+					</span>
+				{/if}
+				<h2 class="text-lg font-semibold text-gray-100">
+					Logs for {currentLogProcess}
+				</h2>
+			</div>
 			<button
 				onclick={closeLogViewer}
 				class="text-gray-400 hover:text-gray-200 text-2xl font-bold"
@@ -688,6 +787,73 @@
 
 		<!-- Log Content -->
 		<div class="flex-1 p-1 bg-gray-800 relative">
+			{#if showSearchBox && showLogModal}
+				<div
+					transition:fly={{ y: -10, duration: 200 }}
+					class="absolute top-2 right-2 bg-gray-900/90 border border-gray-700 rounded-lg p-2 flex items-center gap-2 shadow-lg z-10 backdrop-blur-sm"
+				>
+					<input
+						type="text"
+						bind:this={searchInput}
+						bind:value={searchTerm}
+						oninput={() => findNext()}
+						onkeydown={handleSearchKeyDown}
+						placeholder="Search..."
+						class="w-48 px-2 py-1 bg-gray-700 text-gray-100 rounded border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+					<button
+						onclick={findPrevious}
+						class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
+						title="Previous (Shift+Enter)"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-5 w-5"
+							viewBox="0 0 20 20"
+							fill="currentColor"
+							><path
+								fill-rule="evenodd"
+								d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"
+								clip-rule="evenodd"
+							/></svg
+						>
+					</button>
+					<button
+						onclick={findNext}
+						class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
+						title="Next (Enter)"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-5 w-5"
+							viewBox="0 0 20 20"
+							fill="currentColor"
+							><path
+								fill-rule="evenodd"
+								d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+								clip-rule="evenodd"
+							/></svg
+						>
+					</button>
+					<button
+						onclick={closeSearch}
+						class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
+						title="Close (Esc)"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-5 w-5"
+							viewBox="0 0 20 20"
+							fill="currentColor"
+							><path
+								fill-rule="evenodd"
+								d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+								clip-rule="evenodd"
+							/></svg
+						>
+					</button>
+				</div>
+			{/if}
 			{#each processes as process}
 				<div
 					class="w-full h-full absolute top-0 left-0 transition-opacity duration-400 ease-in-out {showLogModal &&
