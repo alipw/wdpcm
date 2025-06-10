@@ -23,6 +23,8 @@
 	let loading = $state(false);
 	let error = $state("");
 	let actionLoading: { [key: string]: boolean } = $state({});
+	let debouncedActionLoading: { [key: string]: boolean } = $state({});
+	let loadingTimeouts: { [key: string]: ReturnType<typeof setTimeout> } = $state({});
 
 	// Debounce search state
 	let searchTimeout: ReturnType<typeof setTimeout> | null = $state(null);
@@ -75,15 +77,51 @@
 	let showSidebar = $state(false);
 
 	// Settings state
-	let openLogOnStart = $state(false);
+	let openLogOnStart = $state(true);
 
 	onMount(() => {
+		// Load settings from localStorage
+		const savedOpenLogOnStart = localStorage.getItem("openLogOnStart");
+		if (savedOpenLogOnStart !== null) {
+			openLogOnStart = JSON.parse(savedOpenLogOnStart);
+		}
+
 		fetchProcesses();
 		initSocketConnection();
 
 		window.addEventListener("resize", () => {
 			fitTerminalSize(currentLogProcess);
 		});
+	});
+
+	// Save settings to localStorage when they change
+	$effect(() => {
+		localStorage.setItem("openLogOnStart", JSON.stringify(openLogOnStart));
+	});
+
+	// Debounce action loading state - only show loading after 400ms
+	$effect(() => {
+		for (const alias in actionLoading) {
+			if (actionLoading[alias] && !debouncedActionLoading[alias]) {
+				// Start loading - set timeout to show loading state after 400ms
+				loadingTimeouts[alias] = setTimeout(() => {
+					debouncedActionLoading[alias] = true;
+					debouncedActionLoading = { ...debouncedActionLoading };
+				}, 400);
+			} else if (!actionLoading[alias] && debouncedActionLoading[alias]) {
+				// Stop loading - clear timeout and hide loading state immediately
+				if (loadingTimeouts[alias]) {
+					clearTimeout(loadingTimeouts[alias]);
+					delete loadingTimeouts[alias];
+				}
+				debouncedActionLoading[alias] = false;
+				debouncedActionLoading = { ...debouncedActionLoading };
+			} else if (!actionLoading[alias] && loadingTimeouts[alias]) {
+				// Loading stopped before timeout - just clear the timeout
+				clearTimeout(loadingTimeouts[alias]);
+				delete loadingTimeouts[alias];
+			}
+		}
 	});
 
 	$effect(() => {
@@ -99,6 +137,10 @@
 			if (termInfo) {
 				termInfo.term.dispose();
 			}
+		});
+		// Clear any pending loading timeouts
+		Object.values(loadingTimeouts).forEach((timeout) => {
+			clearTimeout(timeout);
 		});
 	});
 
@@ -172,6 +214,7 @@
 		socket.on(
 			"process-exited",
 			(message: { alias: string; code: number; signal: any }) => {
+				console.log("process-exited", message);
 				// Clear the PID for this process
 				processPids[message.alias] = null;
 				processPids = { ...processPids };
@@ -182,7 +225,8 @@
 						`\r\n[Process exited with code: ${message.code}${message.signal ? `, signal: ${message.signal}` : ""}]\r\n`,
 					);
 				}
-				fetchProcesses(false);
+				// set that process status to stopped
+				processes.find((p) => p.alias === message.alias)!.status = "stopped";
 			},
 		);
 
@@ -633,11 +677,15 @@
 				<div class="space-y-2">
 					{#each processes as process}
 						<div
-							class="bg-gray-800 border border-gray-700 rounded-lg p-3 hover:bg-gray-750 transition-colors {actionLoading[
+							onclick={() => toggleLogViewer(process.alias)}
+							class="bg-gray-800 border border-gray-700 rounded-lg p-3 hover:bg-gray-750 transition-colors cursor-pointer hover:border-gray-100 {debouncedActionLoading[
 								process.alias
 							]
 								? 'process-loading'
 								: ''}"
+							aria-label="Toggle log viewer"
+							aria-hidden="true"
+							title="Toggle log viewer"
 						>
 							<div class="flex items-center justify-between">
 								<div class="flex-1 min-w-0">
@@ -667,7 +715,13 @@
 								<div
 									class="flex items-center gap-2 ml-3 flex-shrink-0"
 								>
-									<div class="flex items-center gap-2">
+									<div
+										class="flex items-center gap-2"
+										onclick={(e) => e.stopPropagation()}
+										aria-label="Toggle process"
+										aria-hidden="true"
+										title="Toggle process"
+									>
 										<span class="text-xs text-gray-400">
 											{process.status === "running"
 												? "ON"
@@ -694,10 +748,10 @@
 													}
 												}
 											}}
-											disabled={actionLoading[
+											disabled={debouncedActionLoading[
 												process.alias
 											]}
-											class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-400 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed {process.status ===
+											class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-400 ease-in-out focus:outline-none focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed {process.status ===
 											'running'
 												? 'bg-green-600'
 												: 'bg-gray-600'}"
@@ -723,19 +777,6 @@
 											</span>
 										</button>
 									</div>
-									<button
-										onclick={() =>
-											toggleLogViewer(process.alias)}
-										class="px-4 py-2 text-sm rounded h-full {showLogModal &&
-										currentLogProcess === process.alias
-											? 'bg-orange-600 hover:bg-orange-500'
-											: 'bg-blue-600 hover:bg-blue-500'} text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
-									>
-										{showLogModal &&
-										currentLogProcess === process.alias
-											? "Close"
-											: "Logs"}
-									</button>
 								</div>
 							</div>
 						</div>

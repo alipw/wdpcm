@@ -89,6 +89,8 @@ app.post('/processes/start/:alias', (c) => {
       code: e.exitCode,
       signal: e.signal
     });
+
+    managedProcesses.delete(alias);
   });
 
   return c.json({ message: 'Process started', pid: pty.pid, alias });
