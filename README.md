@@ -1,6 +1,6 @@
 # WDPCM - Web Dev Process Manager
 
-![WDPCM Interface](https://private-user-images.githubusercontent.com/77280141/453307118-4a88823a-1a3a-4927-a3f6-c901eb64e066.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDk1MzU5ODcsIm5iZiI6MTc0OTUzNTY4NywicGF0aCI6Ii83NzI4MDE0MS80NTMzMDcxMTgtNGE4ODgyM2EtMWEzYS00OTI3LWEzZjYtYzkwMWViNjRlMDY2LnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTA2MTAlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUwNjEwVDA2MDgwN1omWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTQ3ODNlOTE2OWNjNzFiMDFjNWQxYzY3MjE4OGNmZWU4NTUxM2NkMTY0NTZhZWNjZWZkNDBmNDI2M2IxMmUyZDYmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.m3mbc1nR6JgSARtw83g-NC6CWrf-SG7mgXvziUgArMg)
+![WDPCM Interface](https://github.com/user-attachments/assets/4a88823a-1a3a-4927-a3f6-c901eb64e066)
 
 A modern, real-time web-based process control manager built with Node.js, Hono, and Svelte. WDPCM allows you to manage, monitor, and control system processes through an intuitive web interface with real-time logging and status updates using terminal emulation.
 
