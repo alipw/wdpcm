@@ -1,5 +1,0 @@
-suzuki_openapi_backend cd /home/alipw/Documents/work/suzuki/backend && nvm use 10 && nodemon api.js
-suzuki_openapi_frontend cd /home/alipw/Documents/work/suzuki/server_frontend/master && nvm use 10 && gulp serve
-suzuki_opeapi_crs_backend cd /home/alipw/Documents/work/suzuki/crs_backend && nvm use 10 && nodemon api.js
-suzuki_openapi_crs_frontend cd /home/alipw/Documents/work/suzuki/crs_frontend/master && nvm use 10 && gulp serve
-

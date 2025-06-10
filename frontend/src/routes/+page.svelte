@@ -3,17 +3,18 @@
 	import { fly } from "svelte/transition";
 	import { quintOut } from "svelte/easing";
 	import { io, type Socket } from "socket.io-client";
+	import { Xterm, XtermAddon } from "@battlefieldduck/xterm-svelte";
+	import type {
+		Terminal,
+		ITerminalOptions,
+	} from "@battlefieldduck/xterm-svelte";
+	// import "xterm/css/xterm.css";
+	import type { FitAddon } from "@xterm/addon-fit";
 
 	interface Process {
 		alias: string;
 		command: string;
 		status: string;
-	}
-
-	interface LogMessage {
-		source: "stdout" | "stderr";
-		data: string;
-		timestamp: Date;
 	}
 
 	let processes: Process[] = $state([]);
@@ -23,16 +24,38 @@
 	let actionLoading: { [key: string]: boolean } = $state({});
 
 	// Debounce search state
-	let searchTimeout: NodeJS.Timeout | null = $state(null);
+	let searchTimeout: ReturnType<typeof setTimeout> | null = $state(null);
 
 	// Log viewer state
 	let showLogModal = $state(false);
 	let currentLogProcess = $state("");
-	let logMessages: LogMessage[] = $state([]);
-	let logStore: { [key: string]: LogMessage[] } = $state({});
-	let logContainers: { [key: string]: HTMLElement } = $state({});
-	let isAtBottom = $state(true);
-	let isInitialLoad = $state(true);
+
+	// Xterm state
+	let terminals: {
+		[key: string]: { term: Terminal; fitAddon: FitAddon } | null;
+	} = $state({});
+	const terminalOptions: ITerminalOptions = {
+		theme: {
+			background: "#1f2937", // gray-800
+			foreground: "#d1d5db", // gray-300
+			cursor: "#f97316", // orange-500
+		},
+		fontFamily: "monospace",
+		cursorBlink: true,
+	};
+
+	function fitTerminalSize(alias: string) {
+		const termInfo = terminals[alias];
+		if (termInfo) {
+			termInfo.fitAddon.fit();
+			const dimensions = {
+				cols: termInfo.term.cols,
+				rows: termInfo.term.rows,
+			};
+			console.log("resizing terminal", dimensions);
+			socket?.emit("pty-resize", { alias, ...dimensions });
+		}
+	}
 
 	// Socket.io state
 	let socket: Socket | null = $state(null);
@@ -46,23 +69,50 @@
 	onMount(() => {
 		fetchProcesses();
 		initSocketConnection();
+
+		window.addEventListener("resize", () => {
+			fitTerminalSize(currentLogProcess);
+		});
+	});
+
+	$effect(() => {
+		const shouldResize = showLogModal && currentLogProcess;
+		if (shouldResize) {
+			fitTerminalSize(currentLogProcess);
+		}
 	});
 
 	onDestroy(() => {
 		socket?.disconnect();
+		Object.values(terminals).forEach((termInfo) => {
+			if (termInfo) {
+				termInfo.term.dispose();
+			}
+		});
 	});
 
 	function initSocketConnection() {
-		socket = io("http://localhost:3003");
+		socket = io("http://localhost:3001");
 
 		socket.on("connect", () => {
 			console.info("Socket.IO connected");
+			// Re-attach to terminals if connection is re-established
+			for (const alias in terminals) {
+				terminals[alias]?.term.write(
+					"\r\n[Reconnected to log stream]\r\n",
+				);
+			}
 		});
 
 		socket.on("disconnect", () => {
 			console.warn(
 				"Socket.IO disconnected. It will try to reconnect automatically.",
 			);
+			for (const alias in terminals) {
+				terminals[alias]?.term.write(
+					"\r\n[Disconnected from log stream... attempting to reconnect]\r\n",
+				);
+			}
 		});
 
 		socket.on("connect_error", (err) => {
@@ -70,46 +120,57 @@
 		});
 
 		socket.on(
-			"log",
-			(message: {
-				alias: string;
-				source: "stdout" | "stderr";
-				data: string;
-			}) => {
-				try {
-					const { alias, source, data } = message;
-					const newMessage: LogMessage = {
-						source,
-						data,
-						timestamp: new Date(),
-					};
-
-					if (!logStore[alias]) {
-						logStore[alias] = [];
-					}
-					logStore[alias] = [...logStore[alias], newMessage];
-
-					if (alias === currentLogProcess) {
-						if (isInitialLoad) {
-							logMessages = [...logMessages, newMessage];
-						} else {
-							appendLogToDOM(newMessage, alias);
-						}
-
-						if (isAtBottom) {
-							setTimeout(() => {
-								if (logContainers[alias]) {
-									logContainers[alias].scrollTop =
-										logContainers[alias].scrollHeight;
-								}
-							}, 0);
-						}
-					}
-				} catch (err) {
-					console.error("Failed to parse log message:", err);
-				}
+			"process-data",
+			(message: { alias: string; data: string }) => {
+				terminals[message.alias]?.term.write(message.data);
 			},
 		);
+
+		socket.on(
+			"process-started",
+			(message: { alias: string; pid: number }) => {
+				terminals[message.alias]?.term.write(
+					`\r\n[Process started with PID: ${message.pid}]\r\n`,
+				);
+
+				// If log modal is open for this process, ensure terminal is properly sized
+				if (showLogModal && currentLogProcess === message.alias) {
+					const termInfo = terminals[message.alias];
+					if (termInfo) {
+						termInfo.fitAddon.fit();
+						// Notify backend of terminal size
+						const dimensions = {
+							cols: termInfo.term.cols,
+							rows: termInfo.term.rows,
+						};
+						socket?.emit("pty-resize", {
+							alias: message.alias,
+							...dimensions,
+						});
+					}
+				}
+
+				fetchProcesses(false);
+			},
+		);
+
+		socket.on(
+			"process-exited",
+			(message: { alias: string; code: number; signal: any }) => {
+				const term = terminals[message.alias]?.term;
+				if (term) {
+					term.write(
+						`\r\n[Process exited with code: ${message.code}${message.signal ? `, signal: ${message.signal}` : ""}]\r\n`,
+					);
+				}
+				fetchProcesses(false);
+			},
+		);
+
+		socket.on("process-stopped", (message: { alias: string }) => {
+			terminals[message.alias]?.term.write(`\r\n[Process stopped]\r\n`);
+			fetchProcesses(false);
+		});
 	}
 
 	async function fetchProcesses(showLoading: boolean = true) {
@@ -129,7 +190,28 @@
 				throw new Error(`HTTP error! status: ${response.status}`);
 			}
 
-			processes = await response.json();
+			const newProcesses = await response.json();
+
+			// Initialize terminal slots for new processes
+			for (const process of newProcesses) {
+				if (!(process.alias in terminals)) {
+					// Terminal will be created when the Xterm component loads
+					terminals[process.alias] = null;
+				}
+			}
+
+			// Clean up terminals for processes that no longer exist
+			const currentAliases = new Set(
+				newProcesses.map((p: Process) => p.alias),
+			);
+			for (const alias in terminals) {
+				if (!currentAliases.has(alias) && terminals[alias]) {
+					terminals[alias]?.term.dispose();
+					delete terminals[alias];
+				}
+			}
+
+			processes = newProcesses;
 		} catch (err) {
 			error = err instanceof Error ? err.message : "An error occurred";
 			processes = [];
@@ -144,17 +226,19 @@
 		actionLoading[alias] = true;
 		actionLoading = { ...actionLoading };
 
+		// Ensure terminal is ready before starting
+		if (openLogOnStart && !terminals[alias]) {
+			openLogViewer(alias);
+			// Give it a moment to initialize
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+
 		try {
-			await fetch(`http://localhost:3000/run/${alias}`, {
+			await fetch(`http://localhost:3000/processes/start/${alias}`, {
 				method: "POST",
 			});
 
-			await fetchProcesses(false);
-
-			// Automatically open logs if setting is enabled
-			if (openLogOnStart) {
-				openLogViewer(alias);
-			}
+			// No need to fetchProcesses here, socket event will trigger it
 		} catch (err) {
 			error =
 				err instanceof Error ? err.message : "Failed to start process";
@@ -162,7 +246,10 @@
 		} finally {
 			actionLoading[alias] = false;
 			actionLoading = { ...actionLoading };
-			await fetchProcesses(false);
+			// Automatically open logs if setting is enabled
+			if (openLogOnStart) {
+				openLogViewer(alias);
+			}
 		}
 	}
 
@@ -172,7 +259,7 @@
 
 		try {
 			const response = await fetch(
-				`http://localhost:3000/stop/${alias}`,
+				`http://localhost:3000/processes/stop/${alias}`,
 				{
 					method: "POST",
 				},
@@ -182,7 +269,7 @@
 				throw new Error(`Failed to stop process: ${response.status}`);
 			}
 
-			await fetchProcesses(false);
+			// No need to fetchProcesses here, socket event will trigger it
 		} catch (err) {
 			error =
 				err instanceof Error ? err.message : "Failed to stop process";
@@ -204,77 +291,52 @@
 
 	function openLogViewer(alias: string) {
 		currentLogProcess = alias;
-		logMessages = logStore[alias] || [];
-		isInitialLoad = true;
 		showLogModal = true;
 
+		// The terminal instance might be created now. We need to fit it.
+		// Use a timeout to ensure the DOM is updated and the container is visible.
 		setTimeout(() => {
-			isInitialLoad = false;
-			if (logContainers[alias]) {
-				logContainers[alias].scrollTop =
-					logContainers[alias].scrollHeight;
+			const termInfo = terminals[alias];
+			if (termInfo) {
+				termInfo.fitAddon.fit();
 			}
-		}, 100);
+		}, 200);
 	}
 
 	function closeLogViewer() {
 		showLogModal = false;
-		isAtBottom = true;
 	}
 
-	function appendLogToDOM(message: LogMessage, alias: string) {
-		if (!logContainers[alias]) return;
+	async function onTerminalLoadForProcess(term: Terminal, alias: string) {
+		const { FitAddon } = await XtermAddon.FitAddon();
+		const fitAddon = new FitAddon();
+		term.loadAddon(fitAddon);
 
-		const logEntry = document.createElement("div");
-		logEntry.className = "mb-1";
+		term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+			if (event.ctrlKey && event.key.toLowerCase() === "c") {
+				const selection = term.getSelection();
+				if (selection) {
+					navigator.clipboard.writeText(selection);
+					return false; // Prevent default behavior (sending SIGINT)
+				}
+			}
+			return true; // Allow other keys to be handled normally
+		});
 
-		const timestamp = document.createElement("span");
-		timestamp.className = "text-gray-500 text-xs";
-		timestamp.textContent = `[${message.timestamp.toLocaleTimeString()}]`;
+		// Store terminal info
+		terminals[alias] = { term, fitAddon };
 
-		const source = document.createElement("span");
-		source.className = `ml-2 ${message.source === "stderr" ? "text-red-400" : "text-green-400"}`;
-		source.textContent = `[${message.source.toUpperCase()}]`;
+		// Initial fit with a delay to ensure container is properly sized
+		setTimeout(() => {
+			fitTerminalSize(alias);
+		}, 100);
 
-		const data = document.createElement("span");
-		data.className = "ml-2 whitespace-pre-wrap";
-		data.textContent = message.data;
-
-		logEntry.appendChild(timestamp);
-		logEntry.appendChild(source);
-		logEntry.appendChild(data);
-
-		logContainers[alias].appendChild(logEntry);
-	}
-
-	function checkScrollPosition() {
-		if (logContainers[currentLogProcess] !== undefined) {
-			const threshold = 20;
-			isAtBottom =
-				logContainers[currentLogProcess].scrollTop +
-					logContainers[currentLogProcess].clientHeight >=
-				logContainers[currentLogProcess].scrollHeight - threshold;
-		}
+		term.write(`\r\n[Connected to log stream for ${alias}]\r\n`);
 	}
 
 	function clearLogs() {
-		if (currentLogProcess && logStore[currentLogProcess]) {
-			logStore[currentLogProcess] = [];
-			logMessages = [];
-
-			if (logContainers[currentLogProcess]) {
-				const entries = Array.from(
-					logContainers[currentLogProcess].children,
-				);
-				entries.forEach((entry) => {
-					if (
-						entry.classList.contains("mb-1") &&
-						logContainers[currentLogProcess]
-					) {
-						logContainers[currentLogProcess].removeChild(entry);
-					}
-				});
-			}
+		if (currentLogProcess && terminals[currentLogProcess]) {
+			terminals[currentLogProcess]?.term.clear();
 		}
 	}
 
@@ -308,7 +370,7 @@
 {#if showSidebar}
 	<div
 		class="w-80 bg-gray-800 border-r border-gray-700 flex-shrink-0 fixed h-full z-30"
-		transition:fly={{ x: "-100%", duration: 500, easing: quintOut }}
+		transition:fly={{ x: "-100%", duration: 400, easing: quintOut }}
 	>
 		<!-- Sidebar Header -->
 		<div
@@ -364,14 +426,14 @@
 							onclick={() => {
 								openLogOnStart = !openLogOnStart;
 							}}
-							class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 {openLogOnStart
+							class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-400 ease-lienar focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 {openLogOnStart
 								? 'bg-green-600'
 								: 'bg-gray-600'}"
 						>
 							<span class="sr-only">Toggle open log on start</span
 							>
 							<span
-								class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out {openLogOnStart
+								class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-400 ease-in-out {openLogOnStart
 									? 'translate-x-6'
 									: 'translate-x-1'}"
 							>
@@ -387,7 +449,7 @@
 <div class="flex h-screen overflow-hidden bg-gray-900 filter transition-all">
 	<!-- Main Content -->
 	<div
-		class="flex-shrink-0 transition-all duration-500 ease-in-out overflow-y-auto {showLogModal
+		class="flex-shrink-0 transition-all duration-400 ease-in-out overflow-y-auto {showLogModal
 			? 'w-1/2'
 			: 'w-full'}"
 	>
@@ -502,7 +564,9 @@
 												? 'bg-green-900 text-green-200 border border-green-700'
 												: 'bg-red-900 text-red-200 border border-red-700'}"
 										>
-											{process.status}
+											{process.status === "running"
+												? "Running"
+												: "Stopped"}
 										</span>
 									</div>
 									<div
@@ -544,7 +608,7 @@
 											disabled={actionLoading[
 												process.alias
 											]}
-											class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed {process.status ===
+											class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-400 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed {process.status ===
 											'running'
 												? 'bg-green-600'
 												: 'bg-gray-600'}"
@@ -553,7 +617,7 @@
 												>Toggle process</span
 											>
 											<span
-												class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out {process.status ===
+												class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-400 ease-in-out {process.status ===
 												'running'
 													? 'translate-x-6'
 													: 'translate-x-1'}"
@@ -602,79 +666,63 @@
 	</div>
 
 	<!-- Log Viewer Panel -->
-	{#each processes as process}
+	<div
+		class="w-1/2 h-full bg-gray-800 shadow-xl flex flex-col border-l border-gray-700 fixed right-0 top-0 transition-transform duration-400 ease-in-out {showLogModal
+			? 'translate-x-0'
+			: 'translate-x-full'}"
+	>
+		<!-- Panel Header -->
 		<div
-			class="w-1/2 h-full bg-gray-800 shadow-xl flex flex-col border-l border-gray-700 {currentLogProcess ===
-			process.alias
-				? 'block'
-				: 'hidden'}"
-			transition:fly={{ x: "100%", duration: 500, easing: quintOut }}
+			class="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-700"
 		>
-			<!-- Panel Header -->
-			<div
-				class="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-700"
+			<h2 class="text-lg font-semibold text-gray-100">
+				Logs for {currentLogProcess}
+			</h2>
+			<button
+				onclick={closeLogViewer}
+				class="text-gray-400 hover:text-gray-200 text-2xl font-bold"
 			>
-				<h2 class="text-lg font-semibold text-gray-100">
-					Logs for {currentLogProcess}
-				</h2>
-				<button
-					onclick={closeLogViewer}
-					class="text-gray-400 hover:text-gray-200 text-2xl font-bold"
-				>
-					×
-				</button>
-			</div>
-
-			<!-- Log Content -->
-			<div
-				bind:this={logContainers[process.alias]}
-				onscroll={checkScrollPosition}
-				class="flex-1 overflow-y-auto p-4 bg-gray-900 text-green-400 font-mono text-sm"
-			>
-				{#if logMessages.length === 0}
-					<div class="text-gray-500 text-center py-8">
-						Connecting to log stream...
-					</div>
-				{:else}
-					{#each logMessages as message (message.timestamp.getTime() + Math.random())}
-						<div class="mb-1">
-							<span class="text-gray-500 text-xs">
-								[{message.timestamp.toLocaleTimeString()}]
-							</span>
-							<span
-								class="ml-2 {message.source === 'stderr'
-									? 'text-red-400'
-									: 'text-green-400'}"
-							>
-								[{message.source.toUpperCase()}]
-							</span>
-							<span class="ml-2 whitespace-pre-wrap"
-								>{message.data}</span
-							>
-						</div>
-					{/each}
-				{/if}
-			</div>
-
-			<!-- Panel Footer -->
-			<div
-				class="flex-shrink-0 p-4 border-t border-gray-700 bg-gray-800 flex justify-between"
-			>
-				<button
-					onclick={clearLogs}
-					class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500"
-				>
-					Clear Logs
-				</button>
-				<button
-					onclick={closeLogViewer}
-					class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500"
-				>
-					Close
-				</button>
-			</div>
+				×
+			</button>
 		</div>
-	{/each}
+
+		<!-- Log Content -->
+		<div class="flex-1 p-1 bg-gray-800 relative">
+			{#each processes as process}
+				<div
+					class="w-full h-full absolute top-0 left-0 transition-opacity duration-400 ease-in-out {showLogModal &&
+					currentLogProcess === process.alias
+						? 'opacity-100'
+						: 'opacity-0 pointer-events-none'}"
+				>
+					<Xterm
+						class="w-full h-full"
+						options={terminalOptions}
+						onLoad={(term) =>
+							onTerminalLoadForProcess(term, process.alias)}
+					/>
+				</div>
+			{/each}
+		</div>
+
+		<!-- Panel Footer -->
+		<div
+			class="flex-shrink-0 p-4 border-t border-gray-700 bg-gray-800 flex justify-between"
+		>
+			<button
+				onclick={clearLogs}
+				class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500"
+			>
+				Clear Logs
+			</button>
+			<button
+				onclick={closeLogViewer}
+				class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500"
+			>
+				Close
+			</button>
+		</div>
+	</div>
 </div>
 
 <style>
@@ -708,5 +756,9 @@
 			opacity: 0.6;
 			transform: scale(1);
 		}
+	}
+	:global(.xterm-viewport) {
+		/* Disables the scrollbar in the xterm-viewport since the parent is handling scroll */
+		overflow-y: hidden !important;
 	}
 </style>

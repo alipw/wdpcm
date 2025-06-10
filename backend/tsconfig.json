@@ -1,22 +1,16 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext"],
-    "module": "ESNext",
     "target": "ESNext",
-    "moduleResolution": "bundler",
-    "moduleDetection": "force",
-    "allowImportingTsExtensions": true,
-    "noEmit": true,
-    "composite": true,
+    "module": "NodeNext",
     "strict": true,
-    "downlevelIteration": true,
+    "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true,
-    "allowJs": true,
     "types": [
-      "bun-types"
-    ]
-  }
+      "node"
+    ],
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "outDir": "./dist"
+  },
+  "exclude": ["node_modules"]
 }
