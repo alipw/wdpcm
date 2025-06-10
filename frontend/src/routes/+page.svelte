@@ -65,7 +65,6 @@
 				cols: termInfo.term.cols,
 				rows: termInfo.term.rows,
 			};
-			console.log("resizing terminal", dimensions);
 			socket?.emit("pty-resize", { alias, ...dimensions });
 		}
 	}
@@ -148,8 +147,6 @@
 		socket = io("http://localhost:3001");
 
 		socket.on("connect", () => {
-			console.info("Socket.IO connected");
-			// Re-attach to terminals if connection is re-established
 			for (const alias in terminals) {
 				terminals[alias]?.term.write(
 					"\r\n[Reconnected to log stream]\r\n",
@@ -214,7 +211,6 @@
 		socket.on(
 			"process-exited",
 			(message: { alias: string; code: number; signal: any }) => {
-				console.log("process-exited", message);
 				// Clear the PID for this process
 				processPids[message.alias] = null;
 				processPids = { ...processPids };
