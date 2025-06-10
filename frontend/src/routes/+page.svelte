@@ -805,6 +805,7 @@
 						onclick={findPrevious}
 						class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
 						title="Previous (Shift+Enter)"
+						aria-label="Previous (Shift+Enter)"
 					>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -822,6 +823,7 @@
 						onclick={findNext}
 						class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
 						title="Next (Enter)"
+						aria-label="Next (Enter)"
 					>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -839,6 +841,7 @@
 						onclick={closeSearch}
 						class="p-1 text-gray-300 hover:bg-gray-700 rounded-md"
 						title="Close (Esc)"
+						aria-label="Close (Esc)"
 					>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
