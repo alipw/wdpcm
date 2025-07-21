@@ -9,6 +9,10 @@ import { cors } from 'hono/cors'
 
 import type { ProcessEntry } from './lib/parser.js';
 import type { IPty } from 'node-pty';
+import kill from 'tree-kill';
+import util from 'node:util';
+
+const killPromise = util.promisify(kill);
 
 const app = new Hono()
 const managedProcesses = new Map<string, IPty>();
@@ -96,20 +100,28 @@ app.post('/processes/start/:alias', (c) => {
   return c.json({ message: 'Process started', pid: pty.pid, alias });
 });
 
-app.post('/processes/stop/:alias', (c) => {
+
+app.post('/processes/stop/:alias', async (c) => {
   const alias = c.req.param('alias');
   const pty = managedProcesses.get(alias);
   if (!pty) {
-    return c.json({ error: 'Process not found' }, 404);
+    return c.json({ message: 'Process was not running or already stopped', alias }, 200);
   }
-  pty.kill('SIGTERM');
-  managedProcesses.delete(alias);
 
+  try {
+    await killPromise(pty.pid);
+  } catch (err) {
+    console.error(`Failed to kill process tree for PID ${pty.pid}`, err);
+    return c.json({ error: 'Failed to stop process' }, 500);
+  }
+  
+  managedProcesses.delete(alias);
   server.emit('process-stopped', {
     alias,
     pid: pty.pid
   });
-  return c.json({ message: 'Process stopped', alias });
+
+  return c.json({ message: 'Process tree stopped', alias });
 });
 
 const server = new Server(3001, {
