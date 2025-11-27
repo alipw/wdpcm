@@ -11,6 +11,8 @@
 	// import "xterm/css/xterm.css";
 	import type { FitAddon } from "@xterm/addon-fit";
 	import type { SearchAddon } from "@xterm/addon-search";
+	import CreateGroupModal from "$lib/CreateGroupModal.svelte";
+	import GroupDetailsModal from "$lib/GroupDetailsModal.svelte";
 
 	interface Process {
 		alias: string;
@@ -18,7 +20,17 @@
 		status: string;
 	}
 
+	interface ProcessGroup {
+		id: string;
+		name: string;
+		processAliases: string[];
+	}
+
 	let processes: Process[] = $state([]);
+	let processGroups: ProcessGroup[] = $state([]);
+	let showCreateGroupModal = $state(false);
+	let showGroupDetailsModal = $state(false);
+	let selectedGroup: ProcessGroup | null = $state(null);
 	let searchQuery = $state("");
 	let loading = $state(false);
 	let error = $state("");
@@ -78,12 +90,29 @@
 
 	// Settings state
 	let openLogOnStart = $state(true);
+	let showProcessGroups = $state(true);
 
 	onMount(() => {
 		// Load settings from localStorage
 		const savedOpenLogOnStart = localStorage.getItem("openLogOnStart");
 		if (savedOpenLogOnStart !== null) {
 			openLogOnStart = JSON.parse(savedOpenLogOnStart);
+		}
+
+		const savedShowProcessGroups =
+			localStorage.getItem("showProcessGroups");
+		if (savedShowProcessGroups !== null) {
+			showProcessGroups = JSON.parse(savedShowProcessGroups);
+		}
+
+		// Load process groups from localStorage
+		const savedGroups = localStorage.getItem("processGroups");
+		if (savedGroups) {
+			try {
+				processGroups = JSON.parse(savedGroups);
+			} catch (e) {
+				console.error("Failed to parse process groups", e);
+			}
 		}
 
 		fetchProcesses();
@@ -97,6 +126,15 @@
 	// Save settings to localStorage when they change
 	$effect(() => {
 		localStorage.setItem("openLogOnStart", JSON.stringify(openLogOnStart));
+		localStorage.setItem(
+			"showProcessGroups",
+			JSON.stringify(showProcessGroups),
+		);
+	});
+
+	// Save process groups to localStorage when they change
+	$effect(() => {
+		localStorage.setItem("processGroups", JSON.stringify(processGroups));
 	});
 
 	// Debounce action loading state - only show loading after 400ms
@@ -493,13 +531,49 @@
 		}
 	}
 
+	function createGroup(name: string, aliases: string[]) {
+		const newGroup: ProcessGroup = {
+			id: crypto.randomUUID(),
+			name,
+			processAliases: aliases,
+		};
+		processGroups = [...processGroups, newGroup];
+		showCreateGroupModal = false;
+	}
+
+	function deleteGroup(id: string) {
+		if (confirm("Are you sure you want to delete this group?")) {
+			processGroups = processGroups.filter((g) => g.id !== id);
+		}
+	}
+
+	function viewGroupDetails(group: ProcessGroup) {
+		selectedGroup = group;
+		showGroupDetailsModal = true;
+	}
+
+	async function startGroup(group: ProcessGroup) {
+		for (const alias of group.processAliases) {
+			const process = processes.find((p) => p.alias === alias);
+			if (process && process.status !== "running") {
+				await startProcess(alias);
+			}
+		}
+	}
+
+	async function stopGroup(group: ProcessGroup) {
+		for (const alias of group.processAliases) {
+			const process = processes.find((p) => p.alias === alias);
+			if (process && process.status === "running") {
+				await stopProcess(alias);
+			}
+		}
+	}
 </script>
 
 <div class="overflow-hidden">
 	{#if showSidebar}
-		<div
-			class="fixed h-full p-3 overflow-hidden z-40"
-		>
+		<div class="fixed h-full p-3 overflow-hidden z-40">
 			<div
 				class="w-80 bg-gray-800 backdrop-blur-xl border border-gray-700 flex-shrink-0 h-full z-40 rounded-lg"
 				transition:fly={{ x: "-100%", duration: 400, easing: quintOut }}
@@ -577,6 +651,41 @@
 								</button>
 							</div>
 						</div>
+
+						<!-- Show Process Groups Toggle -->
+						<div
+							class="flex items-center justify-between rounded-lg"
+						>
+							<div class="flex flex-col">
+								<span class="text-sm font-medium text-gray-100"
+									>Show Process Groups</span
+								>
+								<span class="text-xs text-gray-400"
+									>Display the process groups section</span
+								>
+							</div>
+							<div class="flex items-center gap-2">
+								<span class="text-xs text-gray-400">
+									{showProcessGroups ? "ON" : "OFF"}
+								</span>
+								<button
+									onclick={() => {
+										showProcessGroups = !showProcessGroups;
+									}}
+									class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-400 ease-lienar focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 {showProcessGroups
+										? 'bg-green-600'
+										: 'bg-gray-600'} cursor-pointer"
+									aria-label="Toggle process groups visibility"
+								>
+									<span
+										class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-400 ease-in-out {showProcessGroups
+											? 'translate-x-6'
+											: 'translate-x-1'}"
+									>
+									</span>
+								</button>
+							</div>
+						</div>
 					</nav>
 				</div>
 			</div>
@@ -593,7 +702,7 @@
 			<button
 				class="{showSidebar
 					? 'opacity-40'
-					: 'opacity-0 pointer-events-none'} fixed z-25 w-screen h-screen transition-all animate-all bg-black" 
+					: 'opacity-0 pointer-events-none'} fixed z-25 w-screen h-screen transition-all animate-all bg-black"
 				onclick={toggleSidebar}
 				aria-label="Close sidebar"
 			></button>
@@ -630,6 +739,186 @@
 						</h1>
 					</div>
 				</div>
+
+				<!-- Process Groups Section -->
+				{#if showProcessGroups}
+					<div class="mb-8">
+						<div class="flex items-center justify-between mb-4">
+							<h2 class="text-xl font-semibold text-gray-200">
+								Process Groups
+							</h2>
+							<button
+								onclick={() => (showCreateGroupModal = true)}
+								class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm font-medium shadow-lg shadow-blue-900/20"
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									class="h-4 w-4"
+									viewBox="0 0 20 20"
+									fill="currentColor"
+								>
+									<path
+										fill-rule="evenodd"
+										d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+										clip-rule="evenodd"
+									/>
+								</svg>
+								Create Group
+							</button>
+						</div>
+
+						{#if processGroups.length > 0}
+							<div
+								class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
+							>
+								{#each processGroups as group}
+									<div
+										class="bg-gray-800 border border-gray-700 rounded-xl p-4 hover:border-gray-600 transition-all group relative"
+									>
+										<div
+											class="flex justify-between items-start mb-3"
+										>
+											<h3
+												class="font-bold text-gray-100 truncate pr-2"
+												title={group.name}
+											>
+												{group.name}
+											</h3>
+											<div class="flex gap-1">
+												<button
+													onclick={() =>
+														viewGroupDetails(group)}
+													class="p-1 text-gray-400 hover:text-blue-400 transition-colors rounded"
+													title="View Details"
+												>
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														class="h-4 w-4"
+														fill="none"
+														viewBox="0 0 24 24"
+														stroke="currentColor"
+													>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+														/>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+														/>
+													</svg>
+												</button>
+												<button
+													onclick={() =>
+														deleteGroup(group.id)}
+													class="p-1 text-gray-400 hover:text-red-400 transition-colors rounded"
+													title="Delete Group"
+												>
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														class="h-4 w-4"
+														fill="none"
+														viewBox="0 0 24 24"
+														stroke="currentColor"
+													>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+														/>
+													</svg>
+												</button>
+											</div>
+										</div>
+
+										<div class="text-xs text-gray-400 mb-4">
+											{group.processAliases.length} processes
+										</div>
+
+										<div class="flex gap-2">
+											<button
+												onclick={() =>
+													startGroup(group)}
+												class="flex-1 py-2 bg-gray-700 hover:bg-green-600 text-gray-200 hover:text-white rounded-lg transition-colors text-sm font-medium flex justify-center items-center gap-1"
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													class="h-3 w-3"
+													viewBox="0 0 20 20"
+													fill="currentColor"
+												>
+													<path
+														fill-rule="evenodd"
+														d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
+														clip-rule="evenodd"
+													/>
+												</svg>
+												Start
+											</button>
+											<button
+												onclick={() => stopGroup(group)}
+												class="flex-1 py-2 bg-gray-700 hover:bg-red-600 text-gray-200 hover:text-white rounded-lg transition-colors text-sm font-medium flex justify-center items-center gap-1"
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													class="h-3 w-3"
+													viewBox="0 0 20 20"
+													fill="currentColor"
+												>
+													<path
+														fill-rule="evenodd"
+														d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z"
+														clip-rule="evenodd"
+													/>
+												</svg>
+												Stop
+											</button>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{:else}
+							<div
+								class="text-center py-8 bg-gray-800/50 border border-gray-700/50 rounded-xl border-dashed"
+							>
+								<p class="text-gray-400 text-sm">
+									No process groups created yet.
+								</p>
+								<button
+									onclick={() =>
+										(showCreateGroupModal = true)}
+									class="mt-2 text-blue-400 hover:text-blue-300 text-sm font-medium"
+								>
+									Create your first group
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				{#if showCreateGroupModal}
+					<CreateGroupModal
+						{processes}
+						onSave={createGroup}
+						onCancel={() => (showCreateGroupModal = false)}
+					/>
+				{/if}
+
+				{#if showGroupDetailsModal && selectedGroup}
+					<GroupDetailsModal
+						group={selectedGroup}
+						allProcesses={processes}
+						onClose={() => {
+							showGroupDetailsModal = false;
+							selectedGroup = null;
+						}}
+					/>
+				{/if}
 
 				<!-- Search Section -->
 				<div class="mb-4 flex gap-3">
@@ -677,9 +966,7 @@
 							? ""
 							: "es"}
 					</div>
-					<div
-						class="space-y-2 h-full mb-4"
-					>
+					<div class="space-y-2 h-full mb-4">
 						{#each processes as process}
 							<div
 								onclick={() => toggleLogViewer(process.alias)}
