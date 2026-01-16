@@ -7,18 +7,28 @@
         status: string;
     }
 
+    interface ProcessGroup {
+        id: string;
+        name: string;
+        processAliases: string[];
+    }
+
     let {
         processes,
+        group = null,
         onSave,
         onCancel,
     }: {
         processes: Process[];
+        group?: ProcessGroup | null;
         onSave: (name: string, selectedAliases: string[]) => void;
         onCancel: () => void;
     } = $props();
 
-    let groupName = $state("");
-    let selectedAliases: string[] = $state([]);
+    let groupName = $state(group?.name ?? "");
+    let selectedAliases: string[] = $state(group?.processAliases ?? []);
+    
+    const isEditing = $derived(group !== null);
 
     function toggleSelection(alias: string) {
         if (selectedAliases.includes(alias)) {
@@ -47,7 +57,7 @@
             class="p-4 border-b border-gray-700 flex justify-between items-center"
         >
             <h2 class="text-xl font-bold text-gray-100">
-                Create Process Group
+                {isEditing ? "Edit Process Group" : "Create Process Group"}
             </h2>
             <button
                 onclick={onCancel}
@@ -154,7 +164,7 @@
                 disabled={!groupName.trim() || selectedAliases.length === 0}
                 class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-lg shadow-blue-900/20"
             >
-                Create Group
+                {isEditing ? "Save Changes" : "Create Group"}
             </button>
         </div>
     </div>

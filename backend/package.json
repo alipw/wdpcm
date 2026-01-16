@@ -8,12 +8,14 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.14.4",
+    "better-sqlite3": "^12.6.0",
     "hono": "^4.7.11",
     "node-pty": "^1.0.0",
     "socket.io": "^4.8.1",
     "tree-kill": "^1.2.2"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.17",
     "tsx": "^4.7.1",
     "typescript": "^5.8.3"

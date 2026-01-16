@@ -13,6 +13,7 @@
 	import type { SearchAddon } from "@xterm/addon-search";
 	import CreateGroupModal from "$lib/CreateGroupModal.svelte";
 	import GroupDetailsModal from "$lib/GroupDetailsModal.svelte";
+	import ProcessFormModal from "$lib/ProcessFormModal.svelte";
 
 	interface Process {
 		alias: string;
@@ -31,6 +32,9 @@
 	let showCreateGroupModal = $state(false);
 	let showGroupDetailsModal = $state(false);
 	let selectedGroup: ProcessGroup | null = $state(null);
+	let editingGroup: ProcessGroup | null = $state(null);
+	let showProcessFormModal = $state(false);
+	let editingProcess: Process | null = $state(null);
 	let searchQuery = $state("");
 	let loading = $state(false);
 	let error = $state("");
@@ -183,7 +187,7 @@
 	});
 
 	function initSocketConnection() {
-		socket = io("http://localhost:3001");
+		socket = io("http://localhost:7590");
 
 		socket.on("connect", () => {
 			for (const alias in terminals) {
@@ -284,8 +288,8 @@
 
 		try {
 			const url = searchQuery
-				? `http://localhost:3000/processes?search=${encodeURIComponent(searchQuery)}`
-				: "http://localhost:3000/processes";
+				? `http://localhost:7589/processes?search=${encodeURIComponent(searchQuery)}`
+				: "http://localhost:7589/processes";
 
 			const response = await fetch(url);
 
@@ -337,7 +341,7 @@
 		}
 
 		try {
-			await fetch(`http://localhost:3000/processes/start/${alias}`, {
+			await fetch(`http://localhost:7589/processes/start/${alias}`, {
 				method: "POST",
 			});
 
@@ -362,7 +366,7 @@
 
 		try {
 			const response = await fetch(
-				`http://localhost:3000/processes/stop/${alias}`,
+				`http://localhost:7589/processes/stop/${alias}`,
 				{
 					method: "POST",
 				},
@@ -532,13 +536,29 @@
 	}
 
 	function createGroup(name: string, aliases: string[]) {
-		const newGroup: ProcessGroup = {
-			id: crypto.randomUUID(),
-			name,
-			processAliases: aliases,
-		};
-		processGroups = [...processGroups, newGroup];
+		if (editingGroup) {
+			// Update existing group
+			processGroups = processGroups.map((g) =>
+				g.id === editingGroup!.id
+					? { ...g, name, processAliases: aliases }
+					: g
+			);
+			editingGroup = null;
+		} else {
+			// Create new group
+			const newGroup: ProcessGroup = {
+				id: crypto.randomUUID(),
+				name,
+				processAliases: aliases,
+			};
+			processGroups = [...processGroups, newGroup];
+		}
 		showCreateGroupModal = false;
+	}
+
+	function openEditGroupModal(group: ProcessGroup) {
+		editingGroup = group;
+		showCreateGroupModal = true;
 	}
 
 	function deleteGroup(id: string) {
@@ -567,6 +587,78 @@
 			if (process && process.status === "running") {
 				await stopProcess(alias);
 			}
+		}
+	}
+
+	function openCreateProcessModal() {
+		editingProcess = null;
+		showProcessFormModal = true;
+	}
+
+	function openEditProcessModal(process: Process) {
+		editingProcess = process;
+		showProcessFormModal = true;
+	}
+
+	async function handleSaveProcess(alias: string, command: string) {
+		try {
+			if (editingProcess) {
+				// Update existing process
+				const response = await fetch(
+					`http://localhost:7589/processes/${alias}`,
+					{
+						method: "PUT",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ command }),
+					},
+				);
+				if (!response.ok) {
+					const data = await response.json();
+					throw new Error(data.error || "Failed to update process");
+				}
+			} else {
+				// Create new process
+				const response = await fetch("http://localhost:7589/processes", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ alias, command }),
+				});
+				if (!response.ok) {
+					const data = await response.json();
+					throw new Error(data.error || "Failed to create process");
+				}
+			}
+			showProcessFormModal = false;
+			editingProcess = null;
+			await fetchProcesses(false);
+		} catch (err) {
+			error = err instanceof Error ? err.message : "An error occurred";
+		}
+	}
+
+	async function handleDeleteProcess(alias: string) {
+		if (!confirm(`Are you sure you want to delete "${alias}"?`)) {
+			return;
+		}
+		
+		try {
+			const response = await fetch(
+				`http://localhost:7589/processes/${alias}`,
+				{ method: "DELETE" },
+			);
+			if (!response.ok) {
+				const data = await response.json();
+				throw new Error(data.error || "Failed to delete process");
+			}
+			
+			// Close log viewer if it's showing the deleted process
+			if (showLogModal && currentLogProcess === alias) {
+				closeLogViewer();
+			}
+			
+			await fetchProcesses(false);
+		} catch (err) {
+			error = err instanceof Error ? err.message : "An error occurred";
 		}
 	}
 </script>
@@ -790,6 +882,7 @@
 														viewGroupDetails(group)}
 													class="p-1 text-gray-400 hover:text-blue-400 transition-colors rounded"
 													title="View Details"
+													aria-label="View group details"
 												>
 													<svg
 														xmlns="http://www.w3.org/2000/svg"
@@ -814,9 +907,32 @@
 												</button>
 												<button
 													onclick={() =>
+														openEditGroupModal(group)}
+													class="p-1 text-gray-400 hover:text-green-400 transition-colors rounded"
+													title="Edit Group"
+													aria-label="Edit group"
+												>
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														class="h-4 w-4"
+														fill="none"
+														viewBox="0 0 24 24"
+														stroke="currentColor"
+													>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+														/>
+													</svg>
+												</button>
+												<button
+													onclick={() =>
 														deleteGroup(group.id)}
 													class="p-1 text-gray-400 hover:text-red-400 transition-colors rounded"
 													title="Delete Group"
+													aria-label="Delete group"
 												>
 													<svg
 														xmlns="http://www.w3.org/2000/svg"
@@ -904,8 +1020,12 @@
 				{#if showCreateGroupModal}
 					<CreateGroupModal
 						{processes}
+						group={editingGroup}
 						onSave={createGroup}
-						onCancel={() => (showCreateGroupModal = false)}
+						onCancel={() => {
+							showCreateGroupModal = false;
+							editingGroup = null;
+						}}
 					/>
 				{/if}
 
@@ -916,6 +1036,17 @@
 						onClose={() => {
 							showGroupDetailsModal = false;
 							selectedGroup = null;
+						}}
+					/>
+				{/if}
+
+				{#if showProcessFormModal}
+					<ProcessFormModal
+						process={editingProcess}
+						onSave={handleSaveProcess}
+						onCancel={() => {
+							showProcessFormModal = false;
+							editingProcess = null;
 						}}
 					/>
 				{/if}
@@ -937,6 +1068,24 @@
 						class="px-4 py-2 bg-gray-600 text-gray-100 rounded-lg hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
 					>
 						Clear
+					</button>
+					<button
+						onclick={openCreateProcessModal}
+						class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors font-medium shadow-lg shadow-blue-900/20"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-5 w-5"
+							viewBox="0 0 20 20"
+							fill="currentColor"
+						>
+							<path
+								fill-rule="evenodd"
+								d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+								clip-rule="evenodd"
+							/>
+						</svg>
+						New
 					</button>
 				</div>
 
@@ -999,6 +1148,34 @@
 									<div
 										class="flex items-center gap-2 ml-3 flex-shrink-0"
 									>
+										<!-- Edit/Delete buttons -->
+										<div
+											class="flex items-center gap-1 mr-2"
+											onclick={(e) => e.stopPropagation()}
+											aria-hidden="true"
+										>
+											<button
+												onclick={() => openEditProcessModal(process)}
+												class="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-gray-600 rounded transition-colors"
+												title="Edit process"
+												aria-label="Edit process"
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+												</svg>
+											</button>
+											<button
+												onclick={() => handleDeleteProcess(process.alias)}
+												disabled={process.status === "running"}
+												class="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-600 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:bg-transparent"
+												title={process.status === "running" ? "Stop process before deleting" : "Delete process"}
+												aria-label="Delete process"
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+												</svg>
+											</button>
+										</div>
 										<div
 											class="flex items-center gap-2"
 											onclick={(e) => e.stopPropagation()}

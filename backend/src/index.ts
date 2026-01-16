@@ -2,17 +2,44 @@ import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { Server } from 'socket.io'
 import { spawn } from 'node-pty';
-import { parseProcessesFile } from './lib/parser.js';
-import { env } from 'node:process';
+import { exec } from 'node:child_process';
+import { 
+  getAllProcesses, 
+  getProcessByAlias, 
+  createProcess, 
+  updateProcess, 
+  deleteProcess,
+  searchProcesses,
+  type ProcessEntry 
+} from './lib/db.js';
+import { env, platform } from 'node:process';
 import process from 'node:process';
 import { cors } from 'hono/cors'
 
-import type { ProcessEntry } from './lib/parser.js';
 import type { IPty } from 'node-pty';
 import kill from 'tree-kill';
 import util from 'node:util';
 
 const killPromise = util.promisify(kill);
+
+const FRONTEND_URL = 'http://localhost:7591';
+
+function openBrowser(url: string) {
+  const commands: Record<string, string> = {
+    darwin: `open "${url}"`,
+    win32: `start "" "${url}"`,
+    linux: `xdg-open "${url}"`,
+  };
+  
+  const command = commands[platform];
+  if (command) {
+    exec(command, (err) => {
+      if (err) {
+        console.log(`Could not open browser automatically. Please visit: ${url}`);
+      }
+    });
+  }
+}
 
 const app = new Hono()
 const managedProcesses = new Map<string, IPty>();
@@ -31,40 +58,92 @@ app.get('/', (c) => {
 
 app.get('/processes', (c) => {
   try {
-    let processes = parseProcessesFile('processes.tbl');
     const search = c.req.query('search');
-    processes = processes.map((process: ProcessEntry) => {
-      const pty = managedProcesses.get(process.alias);
-      return {
-        ...process,
-        status: pty ? 'running' : 'stopped'
-      }
-    });
+    const processes = search ? searchProcesses(search) : getAllProcesses();
+    
+    const withStatus = processes.map((proc: ProcessEntry) => ({
+      ...proc,
+      status: managedProcesses.has(proc.alias) ? 'running' : 'stopped'
+    }));
 
-    if (search) {
-      const searchLower = search.toLowerCase();
-      const filtered = processes.filter((process: ProcessEntry) =>
-        process.alias.toLowerCase().includes(searchLower) ||
-        process.command.toLowerCase().includes(searchLower)
-      );
-      return c.json(filtered);
-    }
-
-    return c.json(processes);
+    return c.json(withStatus);
   } catch (error) {
-    return c.json({ error: 'Failed to parse processes file' }, 500);
+    return c.json({ error: 'Failed to fetch processes' }, 500);
+  }
+});
+
+app.post('/processes', async (c) => {
+  try {
+    const { alias, command } = await c.req.json();
+    
+    if (!alias || !command) {
+      return c.json({ error: 'Alias and command are required' }, 400);
+    }
+    
+    if (alias.includes(' ')) {
+      return c.json({ error: 'Alias cannot contain spaces' }, 400);
+    }
+    
+    if (getProcessByAlias(alias)) {
+      return c.json({ error: 'Process with this alias already exists' }, 409);
+    }
+    
+    const process = createProcess(alias, command);
+    return c.json(process, 201);
+  } catch (error) {
+    return c.json({ error: 'Failed to create process' }, 500);
+  }
+});
+
+app.put('/processes/:alias', async (c) => {
+  try {
+    const alias = c.req.param('alias');
+    const { command } = await c.req.json();
+    
+    if (!command) {
+      return c.json({ error: 'Command is required' }, 400);
+    }
+    
+    if (!getProcessByAlias(alias)) {
+      return c.json({ error: 'Process not found' }, 404);
+    }
+    
+    updateProcess(alias, command);
+    return c.json({ alias, command });
+  } catch (error) {
+    return c.json({ error: 'Failed to update process' }, 500);
+  }
+});
+
+app.delete('/processes/:alias', async (c) => {
+  try {
+    const alias = c.req.param('alias');
+    
+    // Stop the process if it's running
+    const pty = managedProcesses.get(alias);
+    if (pty) {
+      await killPromise(pty.pid);
+      managedProcesses.delete(alias);
+    }
+    
+    if (!deleteProcess(alias)) {
+      return c.json({ error: 'Process not found' }, 404);
+    }
+    
+    return c.json({ message: 'Process deleted', alias });
+  } catch (error) {
+    return c.json({ error: 'Failed to delete process' }, 500);
   }
 });
 
 app.post('/processes/start/:alias', (c) => {
   const alias = c.req.param('alias');
-  const processes = parseProcessesFile('processes.tbl');
-  const process = processes.find((p: ProcessEntry) => p.alias === alias);
-  if (!process) {
+  const proc = getProcessByAlias(alias);
+  if (!proc) {
     return c.json({ error: 'Process not found' }, 404);
   }
 
-  const pty = spawn(userShell, ['-c', process.command], {
+  const pty = spawn(userShell, ['-c', proc.command], {
     name: 'xterm-color',
     cols: 80,
     rows: 30,
@@ -124,7 +203,7 @@ app.post('/processes/stop/:alias', async (c) => {
   return c.json({ message: 'Process tree stopped', alias });
 });
 
-const server = new Server(3001, {
+const server = new Server(7590, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
@@ -147,9 +226,13 @@ server.on('connection', (socket) => {
 
 serve({
   fetch: app.fetch,
-  port: 3000,
+  port: 7589,
 }, (info) => {
-  console.log(`Server is running on http://localhost:${info.port}`)
+  console.log(`Server is running on http://localhost:${info.port}`);
+  console.log(`Opening frontend at ${FRONTEND_URL}`);
+  setTimeout(() => {
+    openBrowser(FRONTEND_URL);
+  }, 2000)
 })
 
 process.on('beforeExit', () => {
