@@ -2,13 +2,58 @@
   "name": "wdpcm-runner",
   "version": "1.0.0",
   "private": true,
+  "main": "desktop/main.mjs",
   "scripts": {
     "dev": "concurrently \"cd backend && npm run dev\" \"cd frontend && bun dev\"",
     "prod": "concurrently \"cd backend && npm run start\" \"cd frontend && bun preview\"",
-    "initiate": "cd frontend && bun install && bun run build && cd ../backend && npm install && npm run build"
+    "initiate": "cd frontend && bun install && bun run build && cd ../backend && npm install && npm run build",
+    "backend:build": "npm --prefix backend run build",
+    "frontend:build": "npm --prefix frontend run build",
+    "desktop:rebuild-native": "electron-rebuild -f --only better-sqlite3,node-pty --module-dir backend",
+    "desktop:prepare": "npm run backend:build && npm run frontend:build",
+    "desktop:dev": "npm run desktop:prepare && npm run desktop:rebuild-native && electron .",
+    "desktop:dist": "npm run desktop:prepare && electron-builder --linux AppImage --publish never"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@electron/rebuild": "^4.0.3",
+    "concurrently": "^8.2.2",
+    "electron": "^30.5.1",
+    "electron-builder": "^26.7.0"
+  },
+  "build": {
+    "appId": "com.wdpcm.desktop",
+    "productName": "WDPCM",
+    "icon": "wdpcm-logo.png",
+    "files": [
+      "desktop/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "backend/dist",
+        "to": "backend/dist"
+      },
+      {
+        "from": "backend/package.json",
+        "to": "backend/package.json"
+      },
+      {
+        "from": "backend/node_modules",
+        "to": "backend/node_modules"
+      },
+      {
+        "from": "frontend/build",
+        "to": "frontend/build"
+      },
+      "wdpcm-logo.png"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "wdpcm-logo.png"
+    }
   },
   "module": "index.ts",
   "type": "module",

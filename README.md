@@ -11,10 +11,12 @@ A modern, real-time web-based process control manager built with Node.js, Hono, 
 - **🔍 Process Discovery**: Search and filter through configured processes
 - **⚡ High Performance**: Built with Hono web framework for ultra-fast performance
 - **🎨 Modern UI**: Clean, responsive Svelte frontend with TailwindCSS
-- **🔧 Configuration-based**: Define processes in a simple `processes.tbl` file
+- **🔧 Configuration-based**: Define processes in a simple SQLite database
 - **🌐 CORS Enabled**: Secure cross-origin requests support
 - **📱 Responsive Design**: Works seamlessly on desktop and mobile devices
 - **💻 Terminal Emulation**: Full terminal experience with node-pty and xterm.js
+- **🖥️ Desktop Application**: Native desktop app built with Electron
+- **⚙️ Environment Configuration**: Flexible configuration via environment variables
 
 ## 🏗️ Architecture
 
@@ -24,16 +26,18 @@ WDPCM/
 │   ├── src/
 │   │   ├── index.ts      # Main server with REST API and WebSocket
 │   │   └── lib/
-│   │       └── parser.ts # Process configuration parser
-│   ├── processes.tbl     # Process definitions
+│   │       └── db.ts     # Database operations
 │   ├── package.json      # Backend dependencies
 │   └── tsconfig.json     # TypeScript configuration
 ├── frontend/             # Svelte + TailwindCSS frontend
 │   ├── src/              # Svelte components and app logic
 │   ├── package.json      # Frontend dependencies
-│   └── ...              # Vite build configuration
-├── package.json          # Root project scripts
-└── .gitignore           # Git ignore rules
+│   └── build/           # Static build output
+├── desktop/             # Electron desktop application
+│   ├── main.mjs         # Electron main process
+│   └── preload.cjs      # Preload script
+├── package.json         # Root project scripts
+└── .gitignore          # Git ignore rules
 ```
 
 ### Tech Stack
@@ -43,6 +47,7 @@ WDPCM/
 - [Hono](https://hono.dev/) - Ultra-fast web framework
 - [Socket.IO](https://socket.io/) - Real-time WebSocket communication
 - [node-pty](https://github.com/microsoft/node-pty) - Terminal emulation
+- [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) - SQLite database
 - TypeScript - Type safety and modern JS features
 
 **Frontend:**
@@ -51,6 +56,9 @@ WDPCM/
 - [TailwindCSS](https://tailwindcss.com/) - Utility-first CSS framework
 - [Vite](https://vitejs.dev/) - Fast build tool and dev server
 - [xterm.js](https://xtermjs.org/) - Terminal component for web
+
+**Desktop:**
+- [Electron](https://www.electronjs.org/) - Cross-platform desktop framework
 
 ## 🚀 Quick Start
 
@@ -83,21 +91,31 @@ WDPCM/
    bun install  # or npm install
    ```
 
-### Running the Application
+## 🖥️ Running the Application
 
-#### Development Mode
+### Development Mode (Web)
 ```bash
 # Run both backend and frontend in development mode
 npm run dev
 ```
 
-#### Production Mode
+### Production Mode (Web)
 ```bash
 # Run both backend and frontend in production mode
 npm run prod
 ```
 
-#### Manual Startup
+### Desktop Application
+
+```bash
+# Build and run desktop app in development mode
+npm run desktop:dev
+
+# Build desktop distribution (Linux AppImage)
+npm run desktop:dist
+```
+
+### Manual Startup
 
 1. **Start the Backend Server**
    ```bash
@@ -105,8 +123,8 @@ npm run prod
    npm run dev    # Development with hot reload
    npm run start  # Production mode
    ```
-   - REST API will be available at `http://localhost:3000`
-   - WebSocket server will be available at `http://localhost:3001`
+   - REST API will be available at `http://localhost:7589`
+   - WebSocket server will be available at `http://localhost:7590`
 
 2. **Start the Frontend Development Server**
    ```bash
@@ -115,41 +133,69 @@ npm run prod
    ```
    - Frontend will be available at `http://localhost:5173`
 
+## ⚙️ Environment Configuration
+
+WDPCM can be configured using the following environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WDPCM_API_PORT` | `7589` | Backend REST API port |
+| `WDPCM_SOCKET_PORT` | `7590` | WebSocket server port |
+| `WDPCM_FRONTEND_URL` | `http://localhost:7591` | Frontend URL for browser opening |
+| `WDPCM_OPEN_BROWSER` | `true` | Whether to open browser automatically |
+| `WDPCM_DB_PATH` | `backend/data.db` | Path to SQLite database file |
+
+### Example Usage
+
+```bash
+# Custom ports
+WDPCM_API_PORT=8080 WDPCM_SOCKET_PORT=8081 npm run dev
+
+# Don't open browser
+WDPCM_OPEN_BROWSER=false npm run start
+
+# Custom database location
+WDPCM_DB_PATH=/var/lib/wdpcm/data.db npm run start
+```
+
 ## 📋 Process Configuration
 
-WDPCM uses a `processes.tbl` file located in the `backend/` directory to define available processes. 
+WDPCM stores process configurations in an SQLite database. Processes can be managed via the REST API.
 
-### Format
+### Process Schema
 
+- **alias**: Unique identifier for the process
+- **command**: The shell command to execute
+- **status**: Current status (running/stopped)
+
+### Example API Usage
+
+**Create a process:**
+```bash
+curl -X POST http://localhost:7589/processes \
+  -H "Content-Type: application/json" \
+  -d '{"alias": "list-files", "command": "ls -la"}'
 ```
-alias command
-```
 
-### Example `processes.tbl`
-
-```
-list-files ls -la
-system-info uname -a
-disk-usage df -h
-memory-info free -h
-network-test ping -c 4 google.com
-sleepy-test sleep 30
-log-monitor tail -f /var/log/syslog
-htop htop
-fastfetch fastfetch
+**List all processes:**
+```bash
+curl http://localhost:7589/processes
 ```
 
 ## 🔌 API Endpoints
 
-### REST API (Port 3000)
+### REST API (Default Port 7589)
 
 - `GET /` - Welcome message
 - `GET /processes` - List all configured processes with status
-- `GET /processes?search=<query>` - Search processes by alias or command
-- `POST /processes/start/<alias>` - Start a process by alias
-- `POST /processes/stop/<alias>` - Stop a running process by alias
+- `GET /processes/:alias` - Get specific process details
+- `POST /processes` - Create a new process configuration
+- `PUT /processes/:alias` - Update a process configuration
+- `DELETE /processes/:alias` - Delete a process configuration
+- `POST /processes/start/:alias` - Start a process by alias
+- `POST /processes/stop/:alias` - Stop a running process by alias
 
-### WebSocket Events (Port 3001)
+### WebSocket Events (Default Port 7590)
 
 - `process-started` - Process start notifications
 - `process-data` - Real-time process output (stdout/stderr)
@@ -162,19 +208,19 @@ fastfetch fastfetch
 ### Starting a Process
 
 ```bash
-curl -X POST http://localhost:3000/processes/start/list-files
+curl -X POST http://localhost:7589/processes/start/list-files
 ```
 
 ### Stopping a Process
 
 ```bash
-curl -X POST http://localhost:3000/processes/stop/list-files
+curl -X POST http://localhost:7589/processes/stop/list-files
 ```
 
 ### Listing Processes
 
 ```bash
-curl http://localhost:3000/processes
+curl http://localhost:7589/processes
 ```
 
 Response:
@@ -183,20 +229,14 @@ Response:
   {
     "alias": "list-files",
     "command": "ls -la",
-    "status": "running"
+    "status": "stopped"
   },
   {
     "alias": "sleepy-test",
     "command": "sleep 30",
-    "status": "stopped"
+    "status": "running"
   }
 ]
-```
-
-### Searching Processes
-
-```bash
-curl "http://localhost:3000/processes?search=htop"
 ```
 
 ## 🛠️ Development
@@ -215,18 +255,36 @@ npm run start     # Run production build
 ```bash
 cd frontend
 bun run dev       # Development server
-bun run build     # Production build
+bun run build     # Production build (static)
 bun run preview   # Preview production build
 ```
 
-### Environment Configuration
+The frontend is configured to build as a static site (using `@sveltejs/adapter-static`), making it suitable for both web deployment and desktop embedding.
 
-The application uses the following default ports:
-- Backend REST API: `3000`
-- Socket.IO Server: `3001`
-- Frontend Dev Server: `5173`
+### Desktop Development
 
-These can be modified in the respective configuration files.
+```bash
+# Prepare builds for desktop
+npm run desktop:prepare
+
+# Rebuild native modules for Electron
+npm run desktop:rebuild-native
+
+# Run desktop app in development
+npm run desktop:dev
+
+# Build desktop distribution
+npm run desktop:dist
+```
+
+### Desktop-specific Environment Variables
+
+When running in desktop mode, the following additional variables are available:
+
+| Variable | Description |
+|----------|-------------|
+| `WDPCM_RENDERER_API_URL` | API URL for renderer process |
+| `WDPCM_RENDERER_SOCKET_URL` | WebSocket URL for renderer process |
 
 ## 🔒 Security Considerations
 
@@ -235,6 +293,7 @@ These can be modified in the respective configuration files.
 - Terminal emulation provides full shell access - implement authentication for production
 - Consider implementing rate limiting and input validation for production deployments
 - Validate process aliases to prevent command injection
+- Desktop app uses context isolation and preload scripts for security
 
 ## 📝 License
 
@@ -242,4 +301,4 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ---
 
-**Built with ❤️ using Node.js, Hono, Svelte, and modern web technologies** 
+**Built with ❤️ using Node.js, Hono, Svelte, Electron, and modern web technologies**

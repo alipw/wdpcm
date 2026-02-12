@@ -1,9 +1,16 @@
 import Database from 'better-sqlite3';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { env } from 'node:process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, '../../data.db');
+const fallbackDbPath = path.join(__dirname, '../../data.db');
+const dbPath = env.WDPCM_DB_PATH
+  ? path.resolve(env.WDPCM_DB_PATH)
+  : fallbackDbPath;
+
+mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);
 

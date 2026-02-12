@@ -14,6 +14,7 @@
 	import CreateGroupModal from "$lib/CreateGroupModal.svelte";
 	import GroupDetailsModal from "$lib/GroupDetailsModal.svelte";
 	import ProcessFormModal from "$lib/ProcessFormModal.svelte";
+	import { getApiUrl, getSocketUrl } from "$lib/runtime-config";
 
 	interface Process {
 		alias: string;
@@ -95,6 +96,7 @@
 	// Settings state
 	let openLogOnStart = $state(true);
 	let showProcessGroups = $state(true);
+	const socketUrl = getSocketUrl();
 
 	onMount(() => {
 		// Load settings from localStorage
@@ -187,7 +189,7 @@
 	});
 
 	function initSocketConnection() {
-		socket = io("http://localhost:7590");
+		socket = io(socketUrl);
 
 		socket.on("connect", () => {
 			for (const alias in terminals) {
@@ -288,8 +290,8 @@
 
 		try {
 			const url = searchQuery
-				? `http://localhost:7589/processes?search=${encodeURIComponent(searchQuery)}`
-				: "http://localhost:7589/processes";
+				? `${getApiUrl("/processes")}?search=${encodeURIComponent(searchQuery)}`
+				: getApiUrl("/processes");
 
 			const response = await fetch(url);
 
@@ -341,7 +343,7 @@
 		}
 
 		try {
-			await fetch(`http://localhost:7589/processes/start/${alias}`, {
+			await fetch(getApiUrl(`/processes/start/${alias}`), {
 				method: "POST",
 			});
 
@@ -365,12 +367,9 @@
 		actionLoading = { ...actionLoading };
 
 		try {
-			const response = await fetch(
-				`http://localhost:7589/processes/stop/${alias}`,
-				{
-					method: "POST",
-				},
-			);
+			const response = await fetch(getApiUrl(`/processes/stop/${alias}`), {
+				method: "POST",
+			});
 
 			if (!response.ok) {
 				throw new Error(`Failed to stop process: ${response.status}`);
@@ -604,21 +603,18 @@
 		try {
 			if (editingProcess) {
 				// Update existing process
-				const response = await fetch(
-					`http://localhost:7589/processes/${alias}`,
-					{
-						method: "PUT",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ command }),
-					},
-				);
+				const response = await fetch(getApiUrl(`/processes/${alias}`), {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ command }),
+				});
 				if (!response.ok) {
 					const data = await response.json();
 					throw new Error(data.error || "Failed to update process");
 				}
 			} else {
 				// Create new process
-				const response = await fetch("http://localhost:7589/processes", {
+				const response = await fetch(getApiUrl("/processes"), {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({ alias, command }),
@@ -642,10 +638,9 @@
 		}
 		
 		try {
-			const response = await fetch(
-				`http://localhost:7589/processes/${alias}`,
-				{ method: "DELETE" },
-			);
+			const response = await fetch(getApiUrl(`/processes/${alias}`), {
+				method: "DELETE",
+			});
 			if (!response.ok) {
 				const data = await response.json();
 				throw new Error(data.error || "Failed to delete process");
