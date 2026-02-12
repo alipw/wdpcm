@@ -3,14 +3,14 @@ import { Hono } from 'hono'
 import { Server } from 'socket.io'
 import { spawn } from 'node-pty';
 import { exec } from 'node:child_process';
-import { 
-  getAllProcesses, 
-  getProcessByAlias, 
-  createProcess, 
-  updateProcess, 
+import {
+  getAllProcesses,
+  getProcessByAlias,
+  createProcess,
+  updateProcess,
   deleteProcess,
   searchProcesses,
-  type ProcessEntry 
+  type ProcessEntry
 } from './lib/db.js';
 import { env, platform } from 'node:process';
 import process from 'node:process';
@@ -30,7 +30,7 @@ function openBrowser(url: string) {
     win32: `start "" "${url}"`,
     linux: `xdg-open "${url}"`,
   };
-  
+
   const command = commands[platform];
   if (command) {
     exec(command, (err) => {
@@ -60,7 +60,7 @@ app.get('/processes', (c) => {
   try {
     const search = c.req.query('search');
     const processes = search ? searchProcesses(search) : getAllProcesses();
-    
+
     const withStatus = processes.map((proc: ProcessEntry) => ({
       ...proc,
       status: managedProcesses.has(proc.alias) ? 'running' : 'stopped'
@@ -75,19 +75,19 @@ app.get('/processes', (c) => {
 app.post('/processes', async (c) => {
   try {
     const { alias, command } = await c.req.json();
-    
+
     if (!alias || !command) {
       return c.json({ error: 'Alias and command are required' }, 400);
     }
-    
+
     if (alias.includes(' ')) {
       return c.json({ error: 'Alias cannot contain spaces' }, 400);
     }
-    
+
     if (getProcessByAlias(alias)) {
       return c.json({ error: 'Process with this alias already exists' }, 409);
     }
-    
+
     const process = createProcess(alias, command);
     return c.json(process, 201);
   } catch (error) {
@@ -99,15 +99,15 @@ app.put('/processes/:alias', async (c) => {
   try {
     const alias = c.req.param('alias');
     const { command } = await c.req.json();
-    
+
     if (!command) {
       return c.json({ error: 'Command is required' }, 400);
     }
-    
+
     if (!getProcessByAlias(alias)) {
       return c.json({ error: 'Process not found' }, 404);
     }
-    
+
     updateProcess(alias, command);
     return c.json({ alias, command });
   } catch (error) {
@@ -118,18 +118,18 @@ app.put('/processes/:alias', async (c) => {
 app.delete('/processes/:alias', async (c) => {
   try {
     const alias = c.req.param('alias');
-    
+
     // Stop the process if it's running
     const pty = managedProcesses.get(alias);
     if (pty) {
       await killPromise(pty.pid);
       managedProcesses.delete(alias);
     }
-    
+
     if (!deleteProcess(alias)) {
       return c.json({ error: 'Process not found' }, 404);
     }
-    
+
     return c.json({ message: 'Process deleted', alias });
   } catch (error) {
     return c.json({ error: 'Failed to delete process' }, 500);
@@ -193,7 +193,7 @@ app.post('/processes/stop/:alias', async (c) => {
     console.error(`Failed to kill process tree for PID ${pty.pid}`, err);
     return c.json({ error: 'Failed to stop process' }, 500);
   }
-  
+
   managedProcesses.delete(alias);
   server.emit('process-stopped', {
     alias,
@@ -216,7 +216,7 @@ server.on('connection', (socket) => {
     if (pty) {
       try {
         pty.resize(data.cols, data.rows);
-      } catch(error) {
+      } catch (error) {
         console.error(error);
       }
     }
@@ -228,11 +228,11 @@ serve({
   fetch: app.fetch,
   port: 7589,
 }, (info) => {
-  console.log(`Server is running on http://localhost:${info.port}`);
-  console.log(`Opening frontend at ${FRONTEND_URL}`);
   setTimeout(() => {
+    console.log(`Server is running on http://localhost:${info.port}`);
+    console.log(`Opening frontend at ${FRONTEND_URL}`);
     openBrowser(FRONTEND_URL);
-  }, 2000)
+  }, 5000)
 })
 
 process.on('beforeExit', () => {
