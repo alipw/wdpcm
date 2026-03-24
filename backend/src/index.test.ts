@@ -229,8 +229,15 @@ test('process start fails cleanly when the selected worktree does not contain th
   }
 });
 
-test('changing worktree selection is rejected while the process is running', async () => {
+test('changing worktree selection restarts the running process in the selected worktree', async () => {
   const fixture = createRepoFixture();
+  const repoOutputFile = path.join(fixture.repoRoot, 'apps', 'web', 'wdpcm-running-output.txt');
+  const featureOutputFile = path.join(
+    fixture.featureWorktree,
+    'apps',
+    'web',
+    'wdpcm-running-output.txt'
+  );
   const dbPath = path.join(fixture.tempRoot, 'data.db');
   const runtime = await startTestBackend(dbPath);
 
@@ -240,7 +247,8 @@ test('changing worktree selection is rejected while the process is running', asy
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         alias: 'frontend',
-        command: 'sleep 5',
+        command:
+          'node -e "const fs = require(\'node:fs\'); const write = () => fs.writeFileSync(\'wdpcm-running-output.txt\', process.cwd()); write(); setInterval(write, 200);"',
         workingDirectory: fixture.nestedProjectPath
       })
     });
@@ -252,6 +260,15 @@ test('changing worktree selection is rejected while the process is running', asy
     );
     assert.equal(response.status, 200);
 
+    await waitFor(async () => {
+      try {
+        await access(repoOutputFile);
+        return true;
+      } catch (error) {
+        return false;
+      }
+    });
+
     response = await fetch(`http://127.0.0.1:${runtime.apiPort}/processes/frontend`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -259,9 +276,27 @@ test('changing worktree selection is rejected while the process is running', asy
         selectedWorktreePath: fixture.featureWorktree
       })
     });
-    const body = (await response.json()) as { error: string };
-    assert.equal(response.status, 409);
-    assert.match(body.error, /stop the process/i);
+    const body = (await response.json()) as { selectedWorktreePath: string | null };
+    assert.equal(response.status, 200);
+    assert.equal(body.selectedWorktreePath, fixture.featureWorktree);
+
+    await waitFor(async () => {
+      try {
+        const cwd = readFileSync(featureOutputFile, 'utf8').trim();
+        return cwd === path.join(fixture.featureWorktree, 'apps', 'web');
+      } catch (error) {
+        return false;
+      }
+    });
+
+    response = await fetch(`http://127.0.0.1:${runtime.apiPort}/processes`);
+    const processes = (await response.json()) as Array<{
+      alias: string;
+      selectedWorktreePath: string | null;
+      status: string;
+    }>;
+    assert.equal(processes[0]?.selectedWorktreePath, fixture.featureWorktree);
+    assert.equal(processes[0]?.status, 'running');
   } finally {
     runtime.restoreEnv();
     rmSync(fixture.tempRoot, { recursive: true, force: true });

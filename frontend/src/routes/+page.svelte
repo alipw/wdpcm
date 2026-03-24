@@ -417,9 +417,8 @@
 		process: Process,
 		selectedWorktreePath: string | null,
 	) {
-		if (process.status === "running") {
-			return;
-		}
+		actionLoading[process.alias] = true;
+		actionLoading = { ...actionLoading };
 
 		try {
 			const response = await fetch(getApiUrl(`/processes/${process.alias}`), {
@@ -435,10 +434,20 @@
 			updateProcessInList(process.alias, {
 				selectedWorktreePath: data.selectedWorktreePath ?? null,
 			});
-			await fetchWorktreeInfo(process.alias);
+			await Promise.all([
+				fetchProcesses(false),
+				fetchWorktreeInfo(process.alias),
+			]);
 		} catch (err) {
 			error =
 				err instanceof Error ? err.message : "Failed to update worktree selection";
+			await Promise.allSettled([
+				fetchProcesses(false),
+				fetchWorktreeInfo(process.alias),
+			]);
+		} finally {
+			actionLoading[process.alias] = false;
+			actionLoading = { ...actionLoading };
 		}
 	}
 
@@ -1270,11 +1279,11 @@
 														event.stopPropagation();
 														await toggleWorktreeMenu(process.alias);
 													}}
-													disabled={process.status === "running"}
+													disabled={debouncedActionLoading[
+														process.alias
+													]}
 													class="p-1.5 text-gray-400 hover:text-amber-300 hover:bg-gray-600 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:bg-transparent"
-													title={process.status === "running"
-														? "Stop process before changing worktree"
-														: getWorktreeButtonLabel(process)}
+													title={getWorktreeButtonLabel(process)}
 													aria-label="Select worktree"
 												>
 													<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

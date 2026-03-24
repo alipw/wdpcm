@@ -54,6 +54,8 @@ let httpServer: ReturnType<typeof serve> | null = null;
 let runtime: BackendRuntime | null = null;
 let signalHandlersRegistered = false;
 
+class ProcessRuntimeResolutionError extends Error {}
+
 function logRouteError(context: string, error: unknown): void {
   console.error(`[backend] ${context}`, error);
 }
@@ -105,24 +107,88 @@ function openBrowser(url: string) {
   }
 }
 
-async function stopManagedProcess(alias: string): Promise<void> {
+async function stopManagedProcess(
+  alias: string,
+  options: { emitStopped?: boolean } = {}
+): Promise<number | null> {
   const pty = managedProcesses.get(alias);
   if (!pty) {
-    return;
+    return null;
   }
 
   try {
     await killPromise(pty.pid);
   } catch (error) {
     console.error(`Failed to kill process tree for PID ${pty.pid}`, error);
-  } finally {
-    managedProcesses.delete(alias);
+    throw error;
   }
+
+  managedProcesses.delete(alias);
+  if (options.emitStopped) {
+    socketServer?.emit('process-stopped', {
+      alias,
+      pid: pty.pid
+    });
+  }
+
+  return pty.pid;
 }
 
 async function stopAllManagedProcesses(): Promise<void> {
   const aliases = Array.from(managedProcesses.keys());
   await Promise.allSettled(aliases.map((alias) => stopManagedProcess(alias)));
+}
+
+async function startManagedProcess(proc: ProcessEntry): Promise<IPty> {
+  if (managedProcesses.has(proc.alias)) {
+    throw new Error('Process is already running');
+  }
+
+  let cwd: string | null = null;
+  try {
+    cwd = await resolveProcessRuntimeCwd(proc);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Failed to resolve process working directory';
+    throw new ProcessRuntimeResolutionError(message);
+  }
+
+  const pty = spawn(userShell, ['-c', proc.command], {
+    name: 'xterm-color',
+    cols: 80,
+    rows: 30,
+    cwd: cwd ?? undefined,
+    env: {
+      ...env
+    }
+  });
+
+  managedProcesses.set(proc.alias, pty);
+
+  socketServer?.emit('process-started', {
+    alias: proc.alias,
+    pid: pty.pid
+  });
+
+  pty.onData((data) => {
+    socketServer?.emit('process-data', {
+      alias: proc.alias,
+      data
+    });
+  });
+
+  pty.onExit((event) => {
+    socketServer?.emit('process-exited', {
+      alias: proc.alias,
+      code: event.exitCode,
+      signal: event.signal
+    });
+    if (managedProcesses.get(proc.alias) === pty) {
+      managedProcesses.delete(proc.alias);
+    }
+  });
+
+  return pty;
 }
 
 function wireSocketHandlers(server: Server): void {
@@ -323,18 +389,33 @@ app.put('/processes/:alias', async (c) => {
       nextSelectedWorktreePath = null;
     }
 
-    if (
+    const shouldRestartForWorktreeChange =
       managedProcesses.has(alias) &&
-      nextSelectedWorktreePath !== existing.selectedWorktreePath
-    ) {
-      return c.json({ error: 'Stop the process before changing its worktree selection' }, 409);
-    }
+      nextSelectedWorktreePath !== existing.selectedWorktreePath;
 
     updateProcess(alias, {
       command: nextCommand,
       workingDirectory: nextWorkingDirectory,
       selectedWorktreePath: nextSelectedWorktreePath
     });
+
+    if (shouldRestartForWorktreeChange) {
+      await stopManagedProcess(alias, { emitStopped: true });
+
+      const updated = getProcessByAlias(alias);
+      if (!updated) {
+        return c.json({ error: 'Process not found after update' }, 404);
+      }
+
+      try {
+        await startManagedProcess(updated);
+      } catch (error) {
+        if (error instanceof ProcessRuntimeResolutionError) {
+          return c.json({ error: error.message }, 400);
+        }
+        throw error;
+      }
+    }
 
     return c.json({
       alias,
@@ -372,53 +453,19 @@ app.post('/processes/start/:alias', async (c) => {
     return c.json({ error: 'Process not found' }, 404);
   }
 
-  if (managedProcesses.has(alias)) {
-    return c.json({ error: 'Process is already running' }, 409);
-  }
-
-  let cwd: string | null = null;
   try {
-    cwd = await resolveProcessRuntimeCwd(proc);
+    const pty = await startManagedProcess(proc);
+    return c.json({ message: 'Process started', pid: pty.pid, alias });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Failed to resolve process working directory';
-    return c.json({ error: message }, 400);
-  }
-
-  const pty = spawn(userShell, ['-c', proc.command], {
-    name: 'xterm-color',
-    cols: 80,
-    rows: 30,
-    cwd: cwd ?? undefined,
-    env: {
-      ...env
+    if (error instanceof ProcessRuntimeResolutionError) {
+      return c.json({ error: error.message }, 400);
     }
-  });
-
-  managedProcesses.set(alias, pty);
-
-  socketServer?.emit('process-started', {
-    alias,
-    pid: pty.pid
-  });
-
-  pty.onData((data) => {
-    socketServer?.emit('process-data', {
-      alias,
-      data
-    });
-  });
-
-  pty.onExit((event) => {
-    socketServer?.emit('process-exited', {
-      alias,
-      code: event.exitCode,
-      signal: event.signal
-    });
-    managedProcesses.delete(alias);
-  });
-
-  return c.json({ message: 'Process started', pid: pty.pid, alias });
+    if (error instanceof Error && error.message === 'Process is already running') {
+      return c.json({ error: error.message }, 409);
+    }
+    logRouteError(`Failed to start process ${alias}`, error);
+    return c.json({ error: 'Failed to start process' }, 500);
+  }
 });
 
 app.post('/processes/stop/:alias', async (c) => {
@@ -429,17 +476,10 @@ app.post('/processes/stop/:alias', async (c) => {
   }
 
   try {
-    await killPromise(pty.pid);
+    await stopManagedProcess(alias, { emitStopped: true });
   } catch (error) {
-    console.error(`Failed to kill process tree for PID ${pty.pid}`, error);
     return c.json({ error: 'Failed to stop process' }, 500);
   }
-
-  managedProcesses.delete(alias);
-  socketServer?.emit('process-stopped', {
-    alias,
-    pid: pty.pid
-  });
 
   return c.json({ message: 'Process tree stopped', alias });
 });
