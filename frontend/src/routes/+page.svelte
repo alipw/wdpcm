@@ -8,7 +8,6 @@
 		Terminal,
 		ITerminalOptions,
 	} from "@battlefieldduck/xterm-svelte";
-	// import "xterm/css/xterm.css";
 	import type { FitAddon } from "@xterm/addon-fit";
 	import type { SearchAddon } from "@xterm/addon-search";
 	import CreateGroupModal from "$lib/CreateGroupModal.svelte";
@@ -16,16 +15,40 @@
 	import ProcessFormModal from "$lib/ProcessFormModal.svelte";
 	import { getApiUrl, getSocketUrl } from "$lib/runtime-config";
 
+	type ProcessStatus = "running" | "stopped";
+	type WorktreeDiscoveryState =
+		| "ok"
+		| "unconfigured"
+		| "git_unavailable"
+		| "not_repo";
+
 	interface Process {
 		alias: string;
 		command: string;
-		status: string;
+		workingDirectory: string | null;
+		selectedWorktreePath: string | null;
+		status: ProcessStatus;
 	}
 
 	interface ProcessGroup {
 		id: string;
 		name: string;
 		processAliases: string[];
+	}
+
+	interface WorktreeOption {
+		path: string;
+		branch: string | null;
+		isCurrent: boolean;
+	}
+
+	interface WorktreeDiscovery {
+		state: WorktreeDiscoveryState;
+		workingDirectory: string | null;
+		repoRoot: string | null;
+		relativeProjectPath: string | null;
+		selectedWorktreePath: string | null;
+		worktrees: WorktreeOption[];
 	}
 
 	let processes: Process[] = $state([]);
@@ -39,67 +62,91 @@
 	let searchQuery = $state("");
 	let loading = $state(false);
 	let error = $state("");
-	let actionLoading: { [key: string]: boolean } = $state({});
-	let debouncedActionLoading: { [key: string]: boolean } = $state({});
-	let loadingTimeouts: { [key: string]: ReturnType<typeof setTimeout> } =
+	let actionLoading: Record<string, boolean> = $state({});
+	let debouncedActionLoading: Record<string, boolean> = $state({});
+	let loadingTimeouts: Record<string, ReturnType<typeof setTimeout>> =
 		$state({});
+	let worktreeInfoByAlias: Record<string, WorktreeDiscovery | undefined> =
+		$state({});
+	let worktreeLoadingByAlias: Record<string, boolean> = $state({});
+	let worktreeErrorByAlias: Record<string, string> = $state({});
+	let openWorktreeMenuAlias: string | null = $state(null);
 
-	// Debounce search state
 	let searchTimeout: ReturnType<typeof setTimeout> | null = $state(null);
-
-	// Log viewer state
 	let showLogModal = $state(false);
 	let currentLogProcess = $state("");
 	let showSearchBox = $state(false);
 	let searchTerm = $state("");
-	let searchInput: HTMLInputElement;
-
-	// Process PIDs state
-	let processPids: { [key: string]: number | null } = $state({});
-
-	// Xterm state
-	let terminals: {
-		[key: string]: {
+	let searchInput = $state<HTMLInputElement | undefined>(undefined);
+	let processPids: Record<string, number | null> = $state({});
+	let terminals: Record<
+		string,
+		{
 			term: Terminal;
 			fitAddon: FitAddon;
 			searchAddon: SearchAddon;
-		} | null;
-	} = $state({});
+		} | null
+	> = $state({});
+
 	const terminalOptions: ITerminalOptions = {
 		theme: {
-			background: "#192738", // gray-800
-			foreground: "#d1d5db", // gray-300
-			cursor: "#f97316", // orange-500
+			background: "#192738",
+			foreground: "#d1d5db",
+			cursor: "#f97316",
 		},
 		fontFamily: "monospace",
 		cursorBlink: true,
 	};
 
-	function fitTerminalSize(alias: string) {
-		const termInfo = terminals[alias];
-		if (termInfo) {
-			termInfo.fitAddon.fit();
-			const dimensions = {
-				cols: termInfo.term.cols,
-				rows: termInfo.term.rows,
-			};
-			socket?.emit("pty-resize", { alias, ...dimensions });
-		}
-	}
-
-	// Socket.io state
 	let socket: Socket | null = $state(null);
-
-	// Sidebar state
 	let showSidebar = $state(false);
-
-	// Settings state
 	let openLogOnStart = $state(true);
 	let showProcessGroups = $state(true);
 	const socketUrl = getSocketUrl();
 
+	function fitTerminalSize(alias: string) {
+		const termInfo = terminals[alias];
+		if (termInfo) {
+			termInfo.fitAddon.fit();
+			socket?.emit("pty-resize", {
+				alias,
+				cols: termInfo.term.cols,
+				rows: termInfo.term.rows,
+			});
+		}
+	}
+
+	function updateProcessInList(alias: string, updates: Partial<Process>) {
+		processes = processes.map((process) =>
+			process.alias === alias ? { ...process, ...updates } : process,
+		);
+	}
+
+	function clearProcessCaches(alias: string) {
+		delete worktreeInfoByAlias[alias];
+		delete worktreeLoadingByAlias[alias];
+		delete worktreeErrorByAlias[alias];
+		delete terminals[alias];
+		delete processPids[alias];
+		worktreeInfoByAlias = { ...worktreeInfoByAlias };
+		worktreeLoadingByAlias = { ...worktreeLoadingByAlias };
+		worktreeErrorByAlias = { ...worktreeErrorByAlias };
+		terminals = { ...terminals };
+		processPids = { ...processPids };
+		if (openWorktreeMenuAlias === alias) {
+			openWorktreeMenuAlias = null;
+		}
+	}
+
+	function handleWindowResize() {
+		fitTerminalSize(currentLogProcess);
+	}
+
+	function handleDocumentClick() {
+		openWorktreeMenuAlias = null;
+	}
+
 	onMount(() => {
-		// Load settings from localStorage
 		const savedOpenLogOnStart = localStorage.getItem("openLogOnStart");
 		if (savedOpenLogOnStart !== null) {
 			openLogOnStart = JSON.parse(savedOpenLogOnStart);
@@ -111,7 +158,6 @@
 			showProcessGroups = JSON.parse(savedShowProcessGroups);
 		}
 
-		// Load process groups from localStorage
 		const savedGroups = localStorage.getItem("processGroups");
 		if (savedGroups) {
 			try {
@@ -121,15 +167,13 @@
 			}
 		}
 
-		fetchProcesses();
+		void fetchProcesses();
 		initSocketConnection();
 
-		window.addEventListener("resize", () => {
-			fitTerminalSize(currentLogProcess);
-		});
+		window.addEventListener("resize", handleWindowResize);
+		document.addEventListener("click", handleDocumentClick);
 	});
 
-	// Save settings to localStorage when they change
 	$effect(() => {
 		localStorage.setItem("openLogOnStart", JSON.stringify(openLogOnStart));
 		localStorage.setItem(
@@ -138,22 +182,18 @@
 		);
 	});
 
-	// Save process groups to localStorage when they change
 	$effect(() => {
 		localStorage.setItem("processGroups", JSON.stringify(processGroups));
 	});
 
-	// Debounce action loading state - only show loading after 400ms
 	$effect(() => {
 		for (const alias in actionLoading) {
 			if (actionLoading[alias] && !debouncedActionLoading[alias]) {
-				// Start loading - set timeout to show loading state after 400ms
 				loadingTimeouts[alias] = setTimeout(() => {
 					debouncedActionLoading[alias] = true;
 					debouncedActionLoading = { ...debouncedActionLoading };
 				}, 400);
 			} else if (!actionLoading[alias] && debouncedActionLoading[alias]) {
-				// Stop loading - clear timeout and hide loading state immediately
 				if (loadingTimeouts[alias]) {
 					clearTimeout(loadingTimeouts[alias]);
 					delete loadingTimeouts[alias];
@@ -161,7 +201,6 @@
 				debouncedActionLoading[alias] = false;
 				debouncedActionLoading = { ...debouncedActionLoading };
 			} else if (!actionLoading[alias] && loadingTimeouts[alias]) {
-				// Loading stopped before timeout - just clear the timeout
 				clearTimeout(loadingTimeouts[alias]);
 				delete loadingTimeouts[alias];
 			}
@@ -169,8 +208,7 @@
 	});
 
 	$effect(() => {
-		const shouldResize = showLogModal && currentLogProcess;
-		if (shouldResize) {
+		if (showLogModal && currentLogProcess) {
 			fitTerminalSize(currentLogProcess);
 		}
 	});
@@ -178,14 +216,13 @@
 	onDestroy(() => {
 		socket?.disconnect();
 		Object.values(terminals).forEach((termInfo) => {
-			if (termInfo) {
-				termInfo.term.dispose();
-			}
+			termInfo?.term.dispose();
 		});
-		// Clear any pending loading timeouts
 		Object.values(loadingTimeouts).forEach((timeout) => {
 			clearTimeout(timeout);
 		});
+		window.removeEventListener("resize", handleWindowResize);
+		document.removeEventListener("click", handleDocumentClick);
 	});
 
 	function initSocketConnection() {
@@ -224,39 +261,31 @@
 		socket.on(
 			"process-started",
 			(message: { alias: string; pid: number }) => {
-				// Store the PID for this process
 				processPids[message.alias] = message.pid;
 				processPids = { ...processPids };
-
 				terminals[message.alias]?.term.write(
 					`\r\n[Process started with PID: ${message.pid}]\r\n`,
 				);
 
-				// If log modal is open for this process, ensure terminal is properly sized
 				if (showLogModal && currentLogProcess === message.alias) {
 					const termInfo = terminals[message.alias];
 					if (termInfo) {
 						termInfo.fitAddon.fit();
-						// Notify backend of terminal size
-						const dimensions = {
-							cols: termInfo.term.cols,
-							rows: termInfo.term.rows,
-						};
 						socket?.emit("pty-resize", {
 							alias: message.alias,
-							...dimensions,
+							cols: termInfo.term.cols,
+							rows: termInfo.term.rows,
 						});
 					}
 				}
 
-				fetchProcesses(false);
+				void fetchProcesses(false);
 			},
 		);
 
 		socket.on(
 			"process-exited",
-			(message: { alias: string; code: number; signal: any }) => {
-				// Clear the PID for this process
+			(message: { alias: string; code: number; signal: number }) => {
 				processPids[message.alias] = null;
 				processPids = { ...processPids };
 
@@ -266,19 +295,16 @@
 						`\r\n[Process exited with code: ${message.code}${message.signal ? `, signal: ${message.signal}` : ""}]\r\n`,
 					);
 				}
-				// set that process status to stopped
-				processes.find((p) => p.alias === message.alias)!.status =
-					"stopped";
+
+				updateProcessInList(message.alias, { status: "stopped" });
 			},
 		);
 
 		socket.on("process-stopped", (message: { alias: string }) => {
-			// Clear the PID for this process
 			processPids[message.alias] = null;
 			processPids = { ...processPids };
-
 			terminals[message.alias]?.term.write(`\r\n[Process stopped]\r\n`);
-			fetchProcesses(false);
+			void fetchProcesses(false);
 		});
 	}
 
@@ -292,31 +318,24 @@
 			const url = searchQuery
 				? `${getApiUrl("/processes")}?search=${encodeURIComponent(searchQuery)}`
 				: getApiUrl("/processes");
-
 			const response = await fetch(url);
 
 			if (!response.ok) {
 				throw new Error(`HTTP error! status: ${response.status}`);
 			}
 
-			const newProcesses = await response.json();
-
-			// Initialize terminal slots for new processes
+			const newProcesses = (await response.json()) as Process[];
 			for (const process of newProcesses) {
 				if (!(process.alias in terminals)) {
-					// Terminal will be created when the Xterm component loads
 					terminals[process.alias] = null;
 				}
 			}
 
-			// Clean up terminals for processes that no longer exist
-			const currentAliases = new Set(
-				newProcesses.map((p: Process) => p.alias),
-			);
+			const currentAliases = new Set(newProcesses.map((p) => p.alias));
 			for (const alias in terminals) {
-				if (!currentAliases.has(alias) && terminals[alias]) {
+				if (!currentAliases.has(alias)) {
 					terminals[alias]?.term.dispose();
-					delete terminals[alias];
+					clearProcessCaches(alias);
 				}
 			}
 
@@ -331,23 +350,115 @@
 		}
 	}
 
+	async function fetchWorktreeInfo(alias: string) {
+		worktreeLoadingByAlias[alias] = true;
+		worktreeErrorByAlias[alias] = "";
+		worktreeLoadingByAlias = { ...worktreeLoadingByAlias };
+		worktreeErrorByAlias = { ...worktreeErrorByAlias };
+
+		try {
+			const response = await fetch(getApiUrl(`/processes/${alias}/worktrees`));
+			const data = await response.json();
+
+			if (!response.ok) {
+				throw new Error(data.error || "Failed to load worktrees");
+			}
+
+			worktreeInfoByAlias[alias] = data as WorktreeDiscovery;
+			worktreeInfoByAlias = { ...worktreeInfoByAlias };
+		} catch (err) {
+			worktreeErrorByAlias[alias] =
+				err instanceof Error ? err.message : "Failed to load worktrees";
+			worktreeErrorByAlias = { ...worktreeErrorByAlias };
+		} finally {
+			worktreeLoadingByAlias[alias] = false;
+			worktreeLoadingByAlias = { ...worktreeLoadingByAlias };
+		}
+	}
+
+	async function toggleWorktreeMenu(alias: string) {
+		openWorktreeMenuAlias = openWorktreeMenuAlias === alias ? null : alias;
+		if (openWorktreeMenuAlias === alias) {
+			await fetchWorktreeInfo(alias);
+		}
+	}
+
+	function getWorktreeButtonLabel(process: Process) {
+		const info = worktreeInfoByAlias[process.alias];
+		const selectedPath =
+			info?.selectedWorktreePath ?? process.selectedWorktreePath;
+		if (!selectedPath) {
+			return "Worktree";
+		}
+
+		const selectedOption = info?.worktrees.find(
+			(worktree) => worktree.path === selectedPath,
+		);
+		return selectedOption?.branch ?? "Selected worktree";
+	}
+
+	function getWorktreeStateMessage(info: WorktreeDiscovery) {
+		if (info.state === "unconfigured") {
+			return "Set a working directory in the process settings to detect worktrees.";
+		}
+		if (info.state === "git_unavailable") {
+			return "Git is not available on this machine.";
+		}
+		if (info.state === "not_repo") {
+			return "The configured working directory is not inside a Git repository.";
+		}
+		if (info.worktrees.length === 0) {
+			return "No worktrees were detected for this repository.";
+		}
+		return "";
+	}
+
+	async function selectWorktree(
+		process: Process,
+		selectedWorktreePath: string | null,
+	) {
+		if (process.status === "running") {
+			return;
+		}
+
+		try {
+			const response = await fetch(getApiUrl(`/processes/${process.alias}`), {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ selectedWorktreePath }),
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.error || "Failed to update worktree selection");
+			}
+
+			updateProcessInList(process.alias, {
+				selectedWorktreePath: data.selectedWorktreePath ?? null,
+			});
+			await fetchWorktreeInfo(process.alias);
+		} catch (err) {
+			error =
+				err instanceof Error ? err.message : "Failed to update worktree selection";
+		}
+	}
+
 	async function startProcess(alias: string) {
 		actionLoading[alias] = true;
 		actionLoading = { ...actionLoading };
 
-		// Ensure terminal is ready before starting
 		if (openLogOnStart && !terminals[alias]) {
 			openLogViewer(alias);
-			// Give it a moment to initialize
 			await new Promise((resolve) => setTimeout(resolve, 100));
 		}
 
 		try {
-			await fetch(getApiUrl(`/processes/start/${alias}`), {
+			const response = await fetch(getApiUrl(`/processes/start/${alias}`), {
 				method: "POST",
 			});
-
-			// No need to fetchProcesses here, socket event will trigger it
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.error || "Failed to start process");
+			}
 		} catch (err) {
 			error =
 				err instanceof Error ? err.message : "Failed to start process";
@@ -355,7 +466,6 @@
 		} finally {
 			actionLoading[alias] = false;
 			actionLoading = { ...actionLoading };
-			// Automatically open logs if setting is enabled
 			if (openLogOnStart) {
 				openLogViewer(alias);
 			}
@@ -370,12 +480,10 @@
 			const response = await fetch(getApiUrl(`/processes/stop/${alias}`), {
 				method: "POST",
 			});
-
+			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(`Failed to stop process: ${response.status}`);
+				throw new Error(data.error || `Failed to stop process: ${response.status}`);
 			}
-
-			// No need to fetchProcesses here, socket event will trigger it
 		} catch (err) {
 			error =
 				err instanceof Error ? err.message : "Failed to stop process";
@@ -392,7 +500,6 @@
 			return;
 		}
 
-		// If switching between processes, close search for the old one
 		if (showLogModal && currentLogProcess !== alias && showSearchBox) {
 			closeSearch();
 		}
@@ -403,14 +510,8 @@
 	function openLogViewer(alias: string) {
 		currentLogProcess = alias;
 		showLogModal = true;
-
-		// The terminal instance might be created now. We need to fit it.
-		// Use a timeout to ensure the DOM is updated and the container is visible.
 		setTimeout(() => {
-			const termInfo = terminals[alias];
-			if (termInfo) {
-				termInfo.fitAddon.fit();
-			}
+			terminals[alias]?.fitAddon.fit();
 		}, 200);
 	}
 
@@ -434,7 +535,7 @@
 				const selection = term.getSelection();
 				if (selection) {
 					navigator.clipboard.writeText(selection);
-					return false; // Prevent default behavior (sending SIGINT)
+					return false;
 				}
 			}
 			if (event.ctrlKey && event.key.toLowerCase() === "f") {
@@ -447,13 +548,12 @@
 				closeSearch();
 				return false;
 			}
-			return true; // Allow other keys to be handled normally
+			return true;
 		});
 
-		// Store terminal info
 		terminals[alias] = { term, fitAddon, searchAddon };
+		terminals = { ...terminals };
 
-		// Initial fit with a delay to ensure container is properly sized
 		setTimeout(() => {
 			fitTerminalSize(alias);
 		}, 100);
@@ -462,9 +562,7 @@
 	}
 
 	function clearLogs() {
-		if (currentLogProcess && terminals[currentLogProcess]) {
-			terminals[currentLogProcess]?.term.clear();
-		}
+		terminals[currentLogProcess]?.term.clear();
 	}
 
 	function debouncedSearch() {
@@ -473,7 +571,7 @@
 		}
 
 		searchTimeout = setTimeout(() => {
-			fetchProcesses();
+			void fetchProcesses();
 		}, 500);
 	}
 
@@ -482,7 +580,7 @@
 		if (searchTimeout) {
 			clearTimeout(searchTimeout);
 		}
-		fetchProcesses();
+		void fetchProcesses();
 	}
 
 	function toggleSidebar() {
@@ -536,21 +634,21 @@
 
 	function createGroup(name: string, aliases: string[]) {
 		if (editingGroup) {
-			// Update existing group
-			processGroups = processGroups.map((g) =>
-				g.id === editingGroup!.id
-					? { ...g, name, processAliases: aliases }
-					: g
+			processGroups = processGroups.map((group) =>
+				group.id === editingGroup!.id
+					? { ...group, name, processAliases: aliases }
+					: group,
 			);
 			editingGroup = null;
 		} else {
-			// Create new group
-			const newGroup: ProcessGroup = {
-				id: crypto.randomUUID(),
-				name,
-				processAliases: aliases,
-			};
-			processGroups = [...processGroups, newGroup];
+			processGroups = [
+				...processGroups,
+				{
+					id: crypto.randomUUID(),
+					name,
+					processAliases: aliases,
+				},
+			];
 		}
 		showCreateGroupModal = false;
 	}
@@ -562,7 +660,7 @@
 
 	function deleteGroup(id: string) {
 		if (confirm("Are you sure you want to delete this group?")) {
-			processGroups = processGroups.filter((g) => g.id !== id);
+			processGroups = processGroups.filter((group) => group.id !== id);
 		}
 	}
 
@@ -573,7 +671,7 @@
 
 	async function startGroup(group: ProcessGroup) {
 		for (const alias of group.processAliases) {
-			const process = processes.find((p) => p.alias === alias);
+			const process = processes.find((entry) => entry.alias === alias);
 			if (process && process.status !== "running") {
 				await startProcess(alias);
 			}
@@ -582,7 +680,7 @@
 
 	async function stopGroup(group: ProcessGroup) {
 		for (const alias of group.processAliases) {
-			const process = processes.find((p) => p.alias === alias);
+			const process = processes.find((entry) => entry.alias === alias);
 			if (process && process.status === "running") {
 				await stopProcess(alias);
 			}
@@ -599,36 +697,48 @@
 		showProcessFormModal = true;
 	}
 
-	async function handleSaveProcess(alias: string, command: string) {
+	async function handleSaveProcess(
+		alias: string,
+		command: string,
+		workingDirectory: string | null,
+	) {
 		try {
 			if (editingProcess) {
-				// Update existing process
+				const workingDirectoryChanged =
+					(editingProcess.workingDirectory ?? null) !== workingDirectory;
 				const response = await fetch(getApiUrl(`/processes/${alias}`), {
 					method: "PUT",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ command }),
+					body: JSON.stringify({
+						command,
+						workingDirectory,
+						selectedWorktreePath: workingDirectoryChanged
+							? null
+							: editingProcess.selectedWorktreePath,
+					}),
 				});
+				const data = await response.json();
 				if (!response.ok) {
-					const data = await response.json();
 					throw new Error(data.error || "Failed to update process");
 				}
 			} else {
-				// Create new process
 				const response = await fetch(getApiUrl("/processes"), {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ alias, command }),
+					body: JSON.stringify({ alias, command, workingDirectory }),
 				});
+				const data = await response.json();
 				if (!response.ok) {
-					const data = await response.json();
 					throw new Error(data.error || "Failed to create process");
 				}
 			}
+
 			showProcessFormModal = false;
 			editingProcess = null;
 			await fetchProcesses(false);
 		} catch (err) {
 			error = err instanceof Error ? err.message : "An error occurred";
+			throw err;
 		}
 	}
 
@@ -636,21 +746,21 @@
 		if (!confirm(`Are you sure you want to delete "${alias}"?`)) {
 			return;
 		}
-		
+
 		try {
 			const response = await fetch(getApiUrl(`/processes/${alias}`), {
 				method: "DELETE",
 			});
+			const data = await response.json();
 			if (!response.ok) {
-				const data = await response.json();
 				throw new Error(data.error || "Failed to delete process");
 			}
-			
-			// Close log viewer if it's showing the deleted process
+
 			if (showLogModal && currentLogProcess === alias) {
 				closeLogViewer();
 			}
-			
+
+			clearProcessCaches(alias);
 			await fetchProcesses(false);
 		} catch (err) {
 			error = err instanceof Error ? err.message : "An error occurred";
@@ -1139,6 +1249,11 @@
 										>
 											{process.command}
 										</div>
+										{#if process.workingDirectory}
+											<div class="mt-1 text-[11px] text-gray-500 font-mono truncate">
+												CWD: {process.workingDirectory}
+											</div>
+										{/if}
 									</div>
 									<div
 										class="flex items-center gap-2 ml-3 flex-shrink-0"
@@ -1149,6 +1264,102 @@
 											onclick={(e) => e.stopPropagation()}
 											aria-hidden="true"
 										>
+											<div class="relative">
+												<button
+													onclick={async (event) => {
+														event.stopPropagation();
+														await toggleWorktreeMenu(process.alias);
+													}}
+													disabled={process.status === "running"}
+													class="p-1.5 text-gray-400 hover:text-amber-300 hover:bg-gray-600 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:bg-transparent"
+													title={process.status === "running"
+														? "Stop process before changing worktree"
+														: getWorktreeButtonLabel(process)}
+													aria-label="Select worktree"
+												>
+													<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 5a2 2 0 114 0 2 2 0 01-4 0Zm0 14a2 2 0 114 0 2 2 0 01-4 0Zm6-12h2a3 3 0 013 3v1m0 0a2 2 0 100 4 2 2 0 000-4Zm0 0v-1m-8 6h5a3 3 0 003-3v-1" />
+													</svg>
+												</button>
+												{#if openWorktreeMenuAlias === process.alias}
+													<div
+														class="absolute right-0 top-10 z-20 w-80 rounded-xl border border-gray-700 bg-gray-900/95 shadow-2xl backdrop-blur-sm"
+														onclick={(event) => event.stopPropagation()}
+														aria-hidden="true"
+													>
+														<div class="border-b border-gray-700 px-3 py-2">
+															<div class="text-sm font-semibold text-gray-100">
+																Worktree selection
+															</div>
+															<div class="mt-1 text-xs text-gray-400 truncate">
+																{process.workingDirectory ?? "No working directory configured"}
+															</div>
+														</div>
+														<div class="max-h-72 overflow-y-auto p-2">
+															{#if worktreeLoadingByAlias[process.alias]}
+																<div class="px-3 py-4 text-sm text-gray-400">
+																	Detecting worktrees...
+																</div>
+															{:else if worktreeErrorByAlias[process.alias]}
+																<div class="px-3 py-4 text-sm text-red-300">
+																	{worktreeErrorByAlias[process.alias]}
+																</div>
+															{:else if worktreeInfoByAlias[process.alias]}
+																{@const info = worktreeInfoByAlias[process.alias]!}
+																{#if info.state !== "ok" || info.worktrees.length === 0}
+																	<div class="px-3 py-4 text-sm text-gray-400">
+																		{getWorktreeStateMessage(info)}
+																	</div>
+																{:else}
+																	<button
+																		onclick={async (event) => {
+																			event.stopPropagation();
+																			await selectWorktree(process, null);
+																			openWorktreeMenuAlias = null;
+																		}}
+																		class="mb-1 flex w-full flex-col rounded-lg px-3 py-2 text-left transition-colors {!(info.selectedWorktreePath ?? process.selectedWorktreePath)
+																			? 'bg-gray-800 text-gray-100'
+																			: 'text-gray-300 hover:bg-gray-800'}"
+																	>
+																		<span class="text-sm font-medium">
+																			Configured directory
+																		</span>
+																		<span class="text-xs text-gray-400 font-mono truncate">
+																			{info.workingDirectory}
+																		</span>
+																	</button>
+																	{#each info.worktrees as worktree}
+																		<button
+																			onclick={async (event) => {
+																				event.stopPropagation();
+																				await selectWorktree(process, worktree.path);
+																				openWorktreeMenuAlias = null;
+																			}}
+																			class="mb-1 flex w-full flex-col rounded-lg px-3 py-2 text-left transition-colors {worktree.path === (info.selectedWorktreePath ?? process.selectedWorktreePath)
+																				? 'bg-amber-500/10 text-amber-100 ring-1 ring-amber-500/40'
+																				: 'text-gray-300 hover:bg-gray-800'}"
+																		>
+																			<div class="flex items-center gap-2">
+																				<span class="text-sm font-medium">
+																					{worktree.branch ?? "Detached"}
+																				</span>
+																				{#if worktree.isCurrent}
+																					<span class="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-emerald-200">
+																						current
+																					</span>
+																				{/if}
+																			</div>
+																			<span class="text-xs text-gray-400 font-mono truncate">
+																				{worktree.path}
+																			</span>
+																		</button>
+																	{/each}
+																{/if}
+															{/if}
+														</div>
+													</div>
+												{/if}
+											</div>
 											<button
 												onclick={() => openEditProcessModal(process)}
 												class="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-gray-600 rounded transition-colors"
@@ -1393,22 +1604,8 @@
 </div>
 
 <style>
-	.loading-dots {
-		animation: loading-pulse 1.5s infinite;
-	}
 	.process-loading {
 		animation: process-blink 2s ease-in-out infinite;
-	}
-	@keyframes loading-pulse {
-		0% {
-			opacity: 0.3;
-		}
-		50% {
-			opacity: 1;
-		}
-		100% {
-			opacity: 0.3;
-		}
 	}
 	@keyframes process-blink {
 		0% {

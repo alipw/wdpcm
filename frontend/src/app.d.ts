@@ -5,6 +5,7 @@ declare global {
 		wdpcmDesktopConfig?: {
 			apiBaseUrl?: string;
 			socketUrl?: string;
+			pickDirectory?: () => Promise<string | null>;
 		};
 	}
 

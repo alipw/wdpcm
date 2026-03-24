@@ -11,8 +11,9 @@
     "frontend:build": "npm --prefix frontend run build",
     "desktop:rebuild-native": "electron-rebuild -f --only better-sqlite3,node-pty --module-dir backend",
     "desktop:prepare": "npm run backend:build && npm run frontend:build",
-    "desktop:dev": "npm run desktop:prepare && npm run desktop:rebuild-native && electron .",
-    "desktop:dist": "npm run desktop:prepare && electron-builder --linux AppImage --publish never"
+    "desktop:bundle": "npm run desktop:prepare && npm run desktop:rebuild-native",
+    "desktop:dev": "npm run desktop:bundle && electron .",
+    "desktop:dist": "npm run desktop:bundle && electron-builder --linux AppImage --publish never"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",

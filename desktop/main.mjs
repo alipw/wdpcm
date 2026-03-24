@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -17,6 +17,18 @@ let backendStopped = false;
 let quitting = false;
 let frontendServer = null;
 let frontendServerUrl = '';
+
+ipcMain.handle('wdpcm:pick-directory', async () => {
+  const result = await dialog.showOpenDialog(mainWindow ?? undefined, {
+    properties: ['openDirectory']
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return result.filePaths[0];
+});
 
 function resolveBackendEntryPath() {
   if (app.isPackaged) {

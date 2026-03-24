@@ -1,9 +1,11 @@
 <script lang="ts">
     import { fade, scale } from "svelte/transition";
+    import { canPickDirectory, pickDirectory } from "$lib/runtime-config";
 
     interface Process {
         alias: string;
         command: string;
+        workingDirectory: string | null;
         status: string;
     }
 
@@ -13,41 +15,66 @@
         onCancel,
     }: {
         process?: Process | null;
-        onSave: (alias: string, command: string) => void;
+        onSave: (
+            alias: string,
+            command: string,
+            workingDirectory: string | null,
+        ) => Promise<void> | void;
         onCancel: () => void;
     } = $props();
 
     let alias = $state(process?.alias ?? "");
     let command = $state(process?.command ?? "");
+    let workingDirectory = $state(process?.workingDirectory ?? "");
     let error = $state("");
+    let saving = $state(false);
 
     const isEditing = $derived(process !== null);
+    const supportsDirectoryPicker = canPickDirectory();
 
-    function handleSave() {
+    async function handleBrowse() {
+        const selectedDirectory = await pickDirectory();
+        if (selectedDirectory) {
+            workingDirectory = selectedDirectory;
+        }
+    }
+
+    async function handleSave() {
         error = "";
-        
+
         if (!alias.trim()) {
             error = "Alias is required";
             return;
         }
-        
+
         if (alias.includes(" ")) {
             error = "Alias cannot contain spaces";
             return;
         }
-        
+
         if (!command.trim()) {
             error = "Command is required";
             return;
         }
-        
-        onSave(alias.trim(), command.trim());
+
+        saving = true;
+        try {
+            await onSave(
+                alias.trim(),
+                command.trim(),
+                workingDirectory.trim() || null,
+            );
+        } catch (err) {
+            error = err instanceof Error ? err.message : "Failed to save process";
+        } finally {
+            saving = false;
+        }
     }
 
     function handleKeyDown(event: KeyboardEvent) {
         if (event.key === "Enter" && event.ctrlKey) {
-            handleSave();
-        } else if (event.key === "Escape") {
+            void handleSave();
+        } else if (event.key === "Escape" && !saving) {
             onCancel();
         }
     }
@@ -60,7 +87,7 @@
     transition:fade={{ duration: 200 }}
 >
     <div
-        class="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden"
+        class="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden"
         transition:scale={{ duration: 200, start: 0.95 }}
     >
         <div class="p-4 border-b border-gray-700 flex justify-between items-center">
@@ -69,7 +96,8 @@
             </h2>
             <button
                 onclick={onCancel}
-                class="text-gray-400 hover:text-gray-200 transition-colors"
+                disabled={saving}
+                class="text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-50"
                 aria-label="Close modal"
             >
                 <svg
@@ -104,7 +132,7 @@
                     id="alias"
                     type="text"
                     bind:value={alias}
-                    disabled={isEditing}
+                    disabled={isEditing || saving}
                     placeholder="e.g., dev-server"
                     class="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
                 />
@@ -122,8 +150,38 @@
                     bind:value={command}
                     placeholder="e.g., npm run dev"
                     rows="3"
-                    class="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm resize-none"
+                    disabled={saving}
+                    class="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm resize-none disabled:opacity-50"
                 ></textarea>
+            </div>
+
+            <div>
+                <div class="flex items-center justify-between mb-1 gap-3">
+                    <label for="working-directory" class="block text-sm font-medium text-gray-300">
+                        Working Directory
+                    </label>
+                    {#if supportsDirectoryPicker}
+                        <button
+                            type="button"
+                            onclick={handleBrowse}
+                            disabled={saving}
+                            class="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-600 text-gray-200 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Browse
+                        </button>
+                    {/if}
+                </div>
+                <input
+                    id="working-directory"
+                    type="text"
+                    bind:value={workingDirectory}
+                    disabled={saving}
+                    placeholder="/path/to/project or repo subdirectory"
+                    class="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm disabled:opacity-50"
+                />
+                <p class="mt-1 text-xs text-gray-500">
+                    Optional. When this folder is inside a Git repo, WDPCM can detect and switch worktrees for this process.
+                </p>
             </div>
         </div>
 
@@ -132,16 +190,17 @@
             <div class="flex gap-3">
                 <button
                     onclick={onCancel}
-                    class="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+                    disabled={saving}
+                    class="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     Cancel
                 </button>
                 <button
                     onclick={handleSave}
-                    disabled={!alias.trim() || !command.trim()}
+                    disabled={saving || !alias.trim() || !command.trim()}
                     class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-lg shadow-blue-900/20"
                 >
-                    {isEditing ? "Save Changes" : "Create Process"}
+                    {saving ? "Saving..." : isEditing ? "Save Changes" : "Create Process"}
                 </button>
             </div>
         </div>

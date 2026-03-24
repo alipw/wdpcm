@@ -4,6 +4,7 @@ const DEFAULT_SOCKET_URL = 'http://localhost:7590';
 type DesktopConfig = {
   apiBaseUrl?: string;
   socketUrl?: string;
+  pickDirectory?: () => Promise<string | null>;
 };
 
 function readDesktopConfig(): DesktopConfig | undefined {
@@ -33,4 +34,18 @@ export function getSocketUrl(): string {
 export function getApiUrl(pathname: string): string {
   const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
   return `${getApiBaseUrl()}${normalizedPath}`;
+}
+
+export function canPickDirectory(): boolean {
+  const desktopConfig = readDesktopConfig();
+  return typeof desktopConfig?.pickDirectory === 'function';
+}
+
+export async function pickDirectory(): Promise<string | null> {
+  const desktopConfig = readDesktopConfig();
+  if (typeof desktopConfig?.pickDirectory !== 'function') {
+    return null;
+  }
+
+  return desktopConfig.pickDirectory();
 }

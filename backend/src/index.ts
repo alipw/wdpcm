@@ -3,6 +3,8 @@ import { Hono } from 'hono';
 import { Server } from 'socket.io';
 import { spawn } from 'node-pty';
 import { exec } from 'node:child_process';
+import { constants as fsConstants } from 'node:fs';
+import { access } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import {
   getAllProcesses,
@@ -13,6 +15,7 @@ import {
   searchProcesses,
   type ProcessEntry
 } from './lib/db.js';
+import { discoverProcessWorktrees, resolveProcessRuntimeCwd } from './lib/git.js';
 import { env, platform } from 'node:process';
 import process from 'node:process';
 import { cors } from 'hono/cors';
@@ -51,6 +54,10 @@ let httpServer: ReturnType<typeof serve> | null = null;
 let runtime: BackendRuntime | null = null;
 let signalHandlersRegistered = false;
 
+function logRouteError(context: string, error: unknown): void {
+  console.error(`[backend] ${context}`, error);
+}
+
 function parsePort(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -71,6 +78,14 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
     return false;
   }
   return fallback;
+}
+
+function normalizeNullableString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 function openBrowser(url: string) {
@@ -206,13 +221,14 @@ app.get('/processes', (c) => {
 
     return c.json(withStatus);
   } catch (error) {
+    logRouteError('Failed to fetch processes', error);
     return c.json({ error: 'Failed to fetch processes' }, 500);
   }
 });
 
 app.post('/processes', async (c) => {
   try {
-    const { alias, command } = await c.req.json();
+    const { alias, command, workingDirectory } = await c.req.json();
 
     if (!alias || !command) {
       return c.json({ error: 'Alias and command are required' }, 400);
@@ -226,29 +242,108 @@ app.post('/processes', async (c) => {
       return c.json({ error: 'Process with this alias already exists' }, 409);
     }
 
-    const created = createProcess(alias, command);
+    const normalizedWorkingDirectory = normalizeNullableString(workingDirectory);
+    if (normalizedWorkingDirectory) {
+      try {
+        await access(normalizedWorkingDirectory, fsConstants.R_OK);
+      } catch (error) {
+        return c.json({ error: 'Working directory does not exist or is not readable' }, 400);
+      }
+    }
+
+    const created = createProcess(alias, command, normalizedWorkingDirectory);
     return c.json(created, 201);
   } catch (error) {
+    logRouteError('Failed to create process', error);
     return c.json({ error: 'Failed to create process' }, 500);
+  }
+});
+
+app.get('/processes/:alias/worktrees', async (c) => {
+  try {
+    const alias = c.req.param('alias');
+    const proc = getProcessByAlias(alias);
+    if (!proc) {
+      return c.json({ error: 'Process not found' }, 404);
+    }
+
+    const discovery = await discoverProcessWorktrees(
+      proc.workingDirectory,
+      proc.selectedWorktreePath
+    );
+    return c.json(discovery);
+  } catch (error) {
+    logRouteError('Failed to discover worktrees', error);
+    return c.json({ error: 'Failed to discover worktrees' }, 500);
   }
 });
 
 app.put('/processes/:alias', async (c) => {
   try {
     const alias = c.req.param('alias');
-    const { command } = await c.req.json();
-
-    if (!command) {
-      return c.json({ error: 'Command is required' }, 400);
-    }
-
-    if (!getProcessByAlias(alias)) {
+    const existing = getProcessByAlias(alias);
+    if (!existing) {
       return c.json({ error: 'Process not found' }, 404);
     }
 
-    updateProcess(alias, command);
-    return c.json({ alias, command });
+    const payload = await c.req.json();
+    const nextCommand =
+      payload.command === undefined ? existing.command : normalizeNullableString(payload.command);
+    if (!nextCommand) {
+      return c.json({ error: 'Command is required' }, 400);
+    }
+
+    const workingDirectoryProvided = Object.prototype.hasOwnProperty.call(payload, 'workingDirectory');
+    const selectedWorktreeProvided = Object.prototype.hasOwnProperty.call(
+      payload,
+      'selectedWorktreePath'
+    );
+
+    const nextWorkingDirectory = workingDirectoryProvided
+      ? normalizeNullableString(payload.workingDirectory)
+      : existing.workingDirectory;
+
+    if (nextWorkingDirectory) {
+      try {
+        await access(nextWorkingDirectory, fsConstants.R_OK);
+      } catch (error) {
+        return c.json({ error: 'Working directory does not exist or is not readable' }, 400);
+      }
+    }
+
+    let nextSelectedWorktreePath = selectedWorktreeProvided
+      ? normalizeNullableString(payload.selectedWorktreePath)
+      : existing.selectedWorktreePath;
+
+    if (
+      workingDirectoryProvided &&
+      nextWorkingDirectory !== existing.workingDirectory &&
+      !selectedWorktreeProvided
+    ) {
+      nextSelectedWorktreePath = null;
+    }
+
+    if (
+      managedProcesses.has(alias) &&
+      nextSelectedWorktreePath !== existing.selectedWorktreePath
+    ) {
+      return c.json({ error: 'Stop the process before changing its worktree selection' }, 409);
+    }
+
+    updateProcess(alias, {
+      command: nextCommand,
+      workingDirectory: nextWorkingDirectory,
+      selectedWorktreePath: nextSelectedWorktreePath
+    });
+
+    return c.json({
+      alias,
+      command: nextCommand,
+      workingDirectory: nextWorkingDirectory,
+      selectedWorktreePath: nextSelectedWorktreePath
+    });
   } catch (error) {
+    logRouteError('Failed to update process', error);
     return c.json({ error: 'Failed to update process' }, 500);
   }
 });
@@ -265,21 +360,36 @@ app.delete('/processes/:alias', async (c) => {
 
     return c.json({ message: 'Process deleted', alias });
   } catch (error) {
+    logRouteError('Failed to delete process', error);
     return c.json({ error: 'Failed to delete process' }, 500);
   }
 });
 
-app.post('/processes/start/:alias', (c) => {
+app.post('/processes/start/:alias', async (c) => {
   const alias = c.req.param('alias');
   const proc = getProcessByAlias(alias);
   if (!proc) {
     return c.json({ error: 'Process not found' }, 404);
   }
 
+  if (managedProcesses.has(alias)) {
+    return c.json({ error: 'Process is already running' }, 409);
+  }
+
+  let cwd: string | null = null;
+  try {
+    cwd = await resolveProcessRuntimeCwd(proc);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Failed to resolve process working directory';
+    return c.json({ error: message }, 400);
+  }
+
   const pty = spawn(userShell, ['-c', proc.command], {
     name: 'xterm-color',
     cols: 80,
     rows: 30,
+    cwd: cwd ?? undefined,
     env: {
       ...env
     }
